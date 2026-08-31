@@ -1,0 +1,19 @@
+services:
+  tollgate:
+    build: .
+    ports:
+      - "${PORT:-8402}:8402"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: "8402"
+      X402_ENVIRONMENT: ${X402_ENVIRONMENT:-development}
+      NETWORK: ${NETWORK:-eip155:84532}
+      PRICE: ${PRICE:-}
+      GATED_PREFIX: ${GATED_PREFIX:-/v1}
+      X402_PAY_TO: ${X402_PAY_TO:-}
+      CDP_API_KEY_ID: ${CDP_API_KEY_ID:-}
+      CDP_API_KEY_SECRET: ${CDP_API_KEY_SECRET:-}
+      UPSTREAM_URL: ${UPSTREAM_URL:-}
+    restart: unless-stopped

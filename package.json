@@ -1,0 +1,72 @@
+{
+  "name": "x402-micro-tollgate",
+  "version": "0.2.0",
+  "description": "Thin x402 payment gateway + MCP server: charge agents USDC per HTTP route or tool call",
+  "type": "module",
+  "mcpName": "io.github.kevin2003050666-coder/x402-micro-tollgate",
+  "main": "dist/cli.js",
+  "bin": {
+    "x402-micro-tollgate": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "public",
+    "server.json",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build",
+    "start": "tsx src/cli.ts",
+    "start:mcp": "tsx src/cli.ts --stdio",
+    "dev": "tsx watch src/cli.ts",
+    "test": "tsx --test test/**/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": [
+    "x402",
+    "payment",
+    "gateway",
+    "coinbase",
+    "express",
+    "mcp",
+    "agents"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kevin2003050666-coder/x402-micro-tollgate.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kevin2003050666-coder/x402-micro-tollgate/issues"
+  },
+  "homepage": "https://github.com/kevin2003050666-coder/x402-micro-tollgate#readme",
+  "dependencies": {
+    "@coinbase/cdp-sdk": "^1.55.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@x402/core": "^2.24.0",
+    "@x402/evm": "^2.24.0",
+    "@x402/express": "^2.24.0",
+    "@x402/extensions": "^2.24.0",
+    "@x402/mcp": "^2.24.0",
+    "@x402/svm": "^2.24.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "http-proxy-middleware": "^3.0.7",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.13.10",
+    "@types/supertest": "^6.0.2",
+    "supertest": "^7.0.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}

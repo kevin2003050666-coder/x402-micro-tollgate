@@ -1,0 +1,63 @@
+# Publish npm package + MCP Registry metadata on version tags (v*).
+# Requires repo secret NPM_TOKEN. Uses GitHub OIDC for mcp-publisher.
+# Do not run locally — trigger by pushing a tag after the public GitHub mirror exists.
+#
+# Prerequisites:
+# 1. mcpName / server.json name are io.github.kevin2003050666-coder/x402-micro-tollgate
+# 2. Add NPM_TOKEN secret on the public GitHub repo
+# 3. git tag v0.2.0 && git push origin v0.2.0
+# 4. Optionally set server.json remotes[0].url to your public /mcp URL before tagging
+
+name: Publish to npm and MCP Registry
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Sync version into server.json
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          jq --arg v "$VERSION" '.version = $v | .packages[0].version = $v' server.json > server.tmp
+          mv server.tmp server.json
+
+      - name: Publish package to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" \
+            | tar xz mcp-publisher
+
+      - name: Authenticate to MCP Registry (GitHub OIDC)
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish server.json to MCP Registry
+        run: ./mcp-publisher publish

@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>x402-micro-tollgate — Make any API pay-per-call for agents</title>
+  <meta name="description" content="HTTP 402 + MCP tools. Self-host open source. Monetize your API to agents via x402 USDC payments in 5 minutes." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@600;700;800&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #071018;
+      --bg-2: #0c1a24;
+      --ink: #e8f1f4;
+      --muted: #8aa0ab;
+      --line: rgba(232, 241, 244, 0.12);
+      --accent: #3ecfad;
+      --accent-dim: rgba(62, 207, 173, 0.14);
+      --warn: #f0c14a;
+      --radius: 2px;
+      --font-display: "Syne", system-ui, sans-serif;
+      --font-body: "Source Sans 3", system-ui, sans-serif;
+      --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--font-body);
+      color: var(--ink);
+      background: var(--bg);
+      line-height: 1.55;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Atmosphere — edge-to-edge plane, not a card */
+    .sky {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      background:
+        radial-gradient(ellipse 90% 55% at 70% -10%, rgba(62, 207, 173, 0.22), transparent 55%),
+        radial-gradient(ellipse 60% 40% at 10% 80%, rgba(45, 110, 140, 0.18), transparent 50%),
+        linear-gradient(180deg, #071018 0%, #0a1520 45%, #071018 100%);
+    }
+    .sky::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(232, 241, 244, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(232, 241, 244, 0.03) 1px, transparent 1px);
+      background-size: 64px 64px;
+      mask-image: linear-gradient(180deg, rgba(0,0,0,0.55), transparent 70%);
+      animation: grid-drift 28s linear infinite;
+    }
+    @keyframes grid-drift {
+      from { transform: translateY(0); }
+      to { transform: translateY(64px); }
+    }
+
+    .wrap {
+      width: min(1080px, calc(100% - 2rem));
+      margin: 0 auto;
+    }
+
+    /* Nav */
+    header.top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.25rem 0 0;
+      animation: rise 0.7s ease both;
+    }
+    .brand {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 1rem;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+      text-decoration: none;
+    }
+    .brand span { color: var(--accent); }
+    .lang {
+      display: inline-flex;
+      gap: 0.25rem;
+      border: 1px solid var(--line);
+      padding: 0.2rem;
+      background: rgba(7, 16, 24, 0.5);
+    }
+    .lang button {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      padding: 0.35rem 0.55rem;
+      cursor: pointer;
+    }
+    .lang button[aria-pressed="true"] {
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+
+    /* Hero — one composition */
+    .hero {
+      padding: 18vh 0 12vh;
+      max-width: 44rem;
+      animation: rise 0.85s 0.08s ease both;
+    }
+    .hero h1 {
+      font-family: var(--font-display);
+      font-weight: 800;
+      font-size: clamp(2.4rem, 6vw, 3.75rem);
+      line-height: 1.05;
+      letter-spacing: -0.035em;
+      margin: 0.85rem 0 1.1rem;
+    }
+    .hero .lead {
+      font-size: 1.15rem;
+      color: var(--muted);
+      max-width: 36rem;
+      margin-bottom: 1.75rem;
+    }
+    .cta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      font-weight: 500;
+      text-decoration: none;
+      padding: 0.75rem 1.1rem;
+      border: 1px solid transparent;
+      transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn-primary {
+      background: var(--accent);
+      color: #04120f;
+    }
+    .btn-ghost {
+      background: transparent;
+      color: var(--ink);
+      border-color: var(--line);
+    }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+    section {
+      padding: 3.5rem 0;
+      border-top: 1px solid var(--line);
+      animation: rise 0.8s ease both;
+    }
+    section h2 {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 1.55rem;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.65rem;
+    }
+    section p.sub {
+      color: var(--muted);
+      max-width: 36rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .split {
+      display: grid;
+      gap: 1.5rem;
+    }
+    @media (min-width: 760px) {
+      .split-2 { grid-template-columns: 1fr 1fr; }
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      background: rgba(12, 26, 36, 0.55);
+      padding: 1.25rem 1.35rem;
+    }
+    .panel h3 {
+      font-family: var(--font-display);
+      font-size: 1.05rem;
+      margin-bottom: 0.4rem;
+    }
+    .panel p { color: var(--muted); font-size: 0.98rem; }
+    .price {
+      font-family: var(--font-mono);
+      color: var(--accent);
+      font-size: 1.35rem;
+      margin: 0.6rem 0 0.85rem;
+    }
+
+    pre, code {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+    }
+    pre {
+      background: #040b10;
+      border: 1px solid var(--line);
+      padding: 1rem 1.1rem;
+      overflow-x: auto;
+      color: #c9dde6;
+      line-height: 1.6;
+      white-space: pre;
+    }
+    .copy-wrap { position: relative; }
+    .copy-btn {
+      position: absolute;
+      top: 0.55rem;
+      right: 0.55rem;
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      border: 1px solid var(--line);
+      background: var(--bg-2);
+      color: var(--muted);
+      padding: 0.3rem 0.5rem;
+      cursor: pointer;
+    }
+    .copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+    .not {
+      border-left: 3px solid var(--warn);
+      padding-left: 1rem;
+      color: var(--muted);
+    }
+
+    footer {
+      border-top: 1px solid var(--line);
+      padding: 2rem 0 3rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem 1.5rem;
+      justify-content: space-between;
+    }
+    footer a { color: var(--accent); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    [data-i18n] { }
+    html[lang="zh"] .hero h1 { font-size: clamp(2.1rem, 5.5vw, 3.2rem); letter-spacing: -0.02em; }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(14px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+      }
+      .sky::after { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="sky" aria-hidden="true"></div>
+  <div class="wrap">
+    <header class="top">
+      <a class="brand" href="/">x402<span>-</span>micro-tollgate</a>
+      <div class="lang" role="group" aria-label="Language">
+        <button type="button" data-lang="en" aria-pressed="true">EN</button>
+        <button type="button" data-lang="zh" aria-pressed="false">中文</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero" style="border:0;padding-top:18vh;padding-bottom:12vh">
+        <p class="brand" style="color:var(--accent);font-size:0.95rem" data-i18n="eyebrow">x402-micro-tollgate</p>
+        <h1 data-i18n="headline">Make any API pay-per-call for agents in 5 minutes</h1>
+        <p class="lead" data-i18n="lead">HTTP 402 + MCP tools. Humans can still hit a free path; agents pay USDC via x402. Sell shovels before the A2A rush.</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="#self-host" data-i18n="cta_self">Self-host free</a>
+          <a class="btn btn-ghost" href="#waitlist" data-i18n="cta_host">Hosted waitlist — $9.90/mo</a>
+        </div>
+      </section>
+
+      <section id="self-host">
+        <h2 data-i18n="self_title">Self-host (open source)</h2>
+        <p class="sub" data-i18n="self_sub">MIT. One process: HTTP gateway + Streamable HTTP MCP. Point it at your upstream API.</p>
+        <div class="copy-wrap">
+          <button class="copy-btn" type="button" data-copy="#cmd-self">Copy</button>
+          <pre id="cmd-self">npx x402-micro-tollgate
+# or
+docker compose up</pre>
+        </div>
+        <p class="sub" style="margin-top:1rem" data-i18n="self_env">Set three env vars for live settlement: <code>CDP_API_KEY_ID</code>, <code>CDP_API_KEY_SECRET</code>, <code>X402_PAY_TO</code>. Optional: <code>UPSTREAM_URL</code>, <code>PRICE</code>.</p>
+      </section>
+
+      <section id="paths">
+        <h2 data-i18n="paths_title">What you get</h2>
+        <div class="split split-2">
+          <div class="panel">
+            <h3 data-i18n="path_http">HTTP gateway</h3>
+            <p data-i18n="path_http_body">Gate <code>/v1/*</code> with x402. Unpaid → 402 + PAYMENT-REQUIRED. Paid → proxy to your API. <code>/health</code> stays free.</p>
+          </div>
+          <div class="panel">
+            <h3 data-i18n="path_mcp">MCP tools</h3>
+            <p data-i18n="path_mcp_body"><code>server_info</code> free. <code>get_quote</code> and <code>proxy_request</code> charge per call. Drop into Cursor / Claude Desktop.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="cursor">
+        <h2 data-i18n="cursor_title">Cursor config</h2>
+        <p class="sub" data-i18n="cursor_sub">After you expose the server (local or public), paste this into <code>mcp.json</code>.</p>
+        <div class="copy-wrap">
+          <button class="copy-btn" type="button" data-copy="#cfg-cursor">Copy</button>
+          <pre id="cfg-cursor">{
+  "mcpServers": {
+    "x402-micro-tollgate": {
+      "url": "http://127.0.0.1:8402/mcp"
+    }
+  }
+}</pre>
+        </div>
+      </section>
+
+      <section id="waitlist">
+        <h2 data-i18n="host_title">Hosted (coming)</h2>
+        <p class="sub" data-i18n="host_sub">Don’t want to run infra? Join the waitlist for a managed tollgate.</p>
+        <div class="panel" style="max-width:28rem">
+          <h3 data-i18n="host_plan">Managed instance</h3>
+          <p class="price">$9.90<span style="font-size:0.85rem;color:var(--muted)"> / month</span></p>
+          <p data-i18n="host_plan_body">We run the gateway. You set pay-to + upstream. No Stripe checkout yet — email us.</p>
+          <p style="margin-top:1rem">
+            <a class="btn btn-primary" href="mailto:__WAITLIST_EMAIL__?subject=x402-micro-tollgate%20hosted%20waitlist%20%249.90" data-i18n="host_cta">Join waitlist</a>
+          </p>
+        </div>
+      </section>
+
+      <section id="not">
+        <h2 data-i18n="not_title">What this is not</h2>
+        <p class="not" data-i18n="not_body">Not a full A2A marketplace. Not a SaaS billing console. Not a custom chain facilitator. It’s a thin tollgate: charge agents for API / MCP calls with official x402 + CDP settle.</p>
+      </section>
+    </main>
+
+    <footer>
+      <div>
+        <strong style="color:var(--ink)">x402-micro-tollgate</strong>
+        · MIT · x402 · Base
+      </div>
+      <div>
+        <a href="/health">/health</a>
+        · <a href="/mcp">/mcp</a>
+        · <a href="https://github.com/kevin2003050666-coder/x402-micro-tollgate">GitHub</a>
+        · <a href="https://docs.cdp.coinbase.com/x402/quickstart-for-sellers">x402 docs</a>
+        · <a href="https://discord.com/invite/cdp">Discord #x402</a>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    const copy = {
+      en: {
+        eyebrow: "x402-micro-tollgate",
+        headline: "Make any API pay-per-call for agents in 5 minutes",
+        lead: "HTTP 402 + MCP tools. Humans can still hit a free path; agents pay USDC via x402. Sell shovels before the A2A rush.",
+        cta_self: "Self-host free",
+        cta_host: "Hosted waitlist — $9.90/mo",
+        self_title: "Self-host (open source)",
+        self_sub: "MIT. One process: HTTP gateway + Streamable HTTP MCP. Point it at your upstream API.",
+        self_env: "Set three env vars for live settlement: CDP_API_KEY_ID, CDP_API_KEY_SECRET, X402_PAY_TO. Optional: UPSTREAM_URL, PRICE.",
+        paths_title: "What you get",
+        path_http: "HTTP gateway",
+        path_http_body: "Gate /v1/* with x402. Unpaid → 402 + PAYMENT-REQUIRED. Paid → proxy to your API. /health stays free.",
+        path_mcp: "MCP tools",
+        path_mcp_body: "server_info free. get_quote and proxy_request charge per call. Drop into Cursor / Claude Desktop.",
+        cursor_title: "Cursor config",
+        cursor_sub: "After you expose the server (local or public), paste this into mcp.json.",
+        host_title: "Hosted (coming)",
+        host_sub: "Don’t want to run infra? Join the waitlist for a managed tollgate.",
+        host_plan: "Managed instance",
+        host_plan_body: "We run the gateway. You set pay-to + upstream. No Stripe checkout yet — email us.",
+        host_cta: "Join waitlist",
+        not_title: "What this is not",
+        not_body: "Not a full A2A marketplace. Not a SaaS billing console. Not a custom chain facilitator. It’s a thin tollgate: charge agents for API / MCP calls with official x402 + CDP settle."
+      },
+      zh: {
+        eyebrow: "x402-micro-tollgate",
+        headline: "5 分钟让任意 API 对 Agent 按次收费",
+        lead: "HTTP 402 + MCP 工具。人类仍可走免费路径；Agent 通过 x402 用 USDC 付款。在 A2A 爆发前先卖铲子。",
+        cta_self: "开源自托管",
+        cta_host: "托管候补 — $9.90/月",
+        self_title: "自托管（开源）",
+        self_sub: "MIT。单进程：HTTP 网关 + Streamable HTTP MCP。指向你的上游 API 即可。",
+        self_env: "线上结算需三个环境变量：CDP_API_KEY_ID、CDP_API_KEY_SECRET、X402_PAY_TO。可选：UPSTREAM_URL、PRICE。",
+        paths_title: "你得到什么",
+        path_http: "HTTP 网关",
+        path_http_body: "用 x402 闸住 /v1/*。未付 → 402 + PAYMENT-REQUIRED。已付 → 反代到你的 API。/health 始终免费。",
+        path_mcp: "MCP 工具",
+        path_mcp_body: "server_info 免费。get_quote 与 proxy_request 按次收费。可接入 Cursor / Claude Desktop。",
+        cursor_title: "Cursor 配置",
+        cursor_sub: "服务暴露后（本地或公网），粘贴到 mcp.json。",
+        host_title: "托管版（即将推出）",
+        host_sub: "不想自己跑基础设施？加入托管候补名单。",
+        host_plan: "托管实例",
+        host_plan_body: "我们跑网关。你配置收款地址与上游。暂无 Stripe — 发邮件即可。",
+        host_cta: "加入候补",
+        not_title: "这不是什么",
+        not_body: "不是完整的 A2A 市场，不是 SaaS 计费控制台，不是自定义链结算器。它是一层薄收费闸门：用官方 x402 + CDP 结算，向 Agent 收取 API / MCP 调用费。"
+      }
+    };
+
+    function applyLang(lang) {
+      const dict = copy[lang] || copy.en;
+      document.documentElement.lang = lang;
+      document.querySelectorAll("[data-i18n]").forEach((el) => {
+        const key = el.getAttribute("data-i18n");
+        if (key && dict[key]) el.textContent = dict[key];
+      });
+      document.querySelectorAll(".lang button").forEach((btn) => {
+        btn.setAttribute("aria-pressed", btn.getAttribute("data-lang") === lang ? "true" : "false");
+      });
+      try { localStorage.setItem("xt-lang", lang); } catch (_) {}
+      if (lang === "zh" && !location.pathname.startsWith("/zh")) {
+        history.replaceState(null, "", "/zh" + location.hash);
+      } else if (lang === "en" && location.pathname.startsWith("/zh")) {
+        history.replaceState(null, "", "/" + location.hash);
+      }
+    }
+
+    document.querySelectorAll(".lang button").forEach((btn) => {
+      btn.addEventListener("click", () => applyLang(btn.getAttribute("data-lang")));
+    });
+
+    document.querySelectorAll("[data-copy]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const sel = btn.getAttribute("data-copy");
+        const node = document.querySelector(sel);
+        if (!node) return;
+        try {
+          await navigator.clipboard.writeText(node.textContent);
+          btn.textContent = "Copied";
+          setTimeout(() => { btn.textContent = "Copy"; }, 1200);
+        } catch (_) {}
+      });
+    });
+
+    const preferZh = location.pathname.startsWith("/zh") || location.search.includes("lang=zh");
+    let initial = preferZh ? "zh" : "en";
+    try {
+      if (!preferZh && localStorage.getItem("xt-lang") === "zh") initial = "zh";
+    } catch (_) {}
+    applyLang(initial);
+  </script>
+</body>
+</html>

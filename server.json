@@ -1,0 +1,78 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.kevin2003050666-coder/x402-micro-tollgate",
+  "title": "x402 Micro Tollgate",
+  "description": "Seller-side x402 payment gateway + MCP server. Charge agents USDC per HTTP route or MCP tool call (get_quote, proxy_request). Self-host via npx/Docker; expose Streamable HTTP at /mcp or run stdio.",
+  "version": "0.2.0",
+  "websiteUrl": "https://github.com/kevin2003050666-coder/x402-micro-tollgate",
+  "repository": {
+    "url": "https://github.com/kevin2003050666-coder/x402-micro-tollgate",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "x402-micro-tollgate",
+      "version": "0.2.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "--stdio"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "CDP_API_KEY_ID",
+          "description": "Coinbase CDP API key ID for the x402 facilitator",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "CDP_API_KEY_SECRET",
+          "description": "Coinbase CDP API key secret for the x402 facilitator",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "X402_PAY_TO",
+          "description": "EVM address that receives USDC settlements",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "UPSTREAM_URL",
+          "description": "Upstream HTTP API to proxy after payment (omit for built-in mock)",
+          "isRequired": false
+        },
+        {
+          "name": "PRICE",
+          "description": "Dollar price per paid call, e.g. $0.001",
+          "default": "$0.001",
+          "isRequired": false
+        },
+        {
+          "name": "NETWORK",
+          "description": "CAIP-2 network id (eip155:84532 Base Sepolia or eip155:8453 Base)",
+          "default": "eip155:84532",
+          "isRequired": false
+        },
+        {
+          "name": "X402_ENVIRONMENT",
+          "description": "development or production",
+          "default": "development",
+          "isRequired": false
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://example.com/mcp"
+    }
+  ]
+}
