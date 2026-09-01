@@ -81,6 +81,41 @@ export function httpProxyBazaarExtension() {
   );
 }
 
+export function httpFetchMdBazaarExtension() {
+  return withDiscoverable(
+    declareHttpDiscovery({
+      method: "GET",
+      input: { url: "https://example.com" },
+      inputSchema: {
+        properties: {
+          url: {
+            type: "string",
+            description: "Public http(s) URL to fetch and convert to Markdown",
+          },
+        },
+        required: ["url"],
+        additionalProperties: false,
+      },
+      output: {
+        example: {
+          url: "https://example.com",
+          title: "Example Domain",
+          markdown: "# Example Domain\n\nThis domain is for use in illustrative examples.",
+        },
+        schema: {
+          type: "object",
+          properties: {
+            url: { type: "string" },
+            title: { type: "string" },
+            markdown: { type: "string" },
+          },
+          required: ["url", "markdown"],
+        },
+      },
+    }),
+  );
+}
+
 export function mcpGetQuoteBazaarExtension() {
   return withDiscoverable(
     declareDiscoveryExtension({

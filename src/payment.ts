@@ -4,7 +4,12 @@ import { paymentMiddlewareFromHTTPServer } from "@x402/express";
 import { encodePaymentRequiredHeader } from "@x402/core/http";
 import type { TollgateConfig } from "./config.js";
 import { gatedRoutePatterns, isFreePath, isGatedPath } from "./config.js";
-import { httpProxyBazaarExtension, httpQuoteBazaarExtension } from "./bazaar.js";
+import {
+  httpFetchMdBazaarExtension,
+  httpProxyBazaarExtension,
+  httpQuoteBazaarExtension,
+} from "./bazaar.js";
+import { paymentRequiredJsonBody } from "./payment-required-body.js";
 
 /** Base Sepolia / Base mainnet default USDC (from @x402/evm defaults). */
 const DEFAULT_USDC: Record<string, { asset: string; decimals: number }> = {
@@ -46,6 +51,7 @@ type RouteEntry = {
 function buildGatedHttpRoutes(config: TollgateConfig): Record<string, RouteEntry> {
   const quoteExt = httpQuoteBazaarExtension();
   const proxyExt = httpProxyBazaarExtension();
+  const fetchMdExt = httpFetchMdBazaarExtension();
   const routes: Record<string, RouteEntry> = {
     "GET /v1/quote": {
       price: config.price,
@@ -53,6 +59,13 @@ function buildGatedHttpRoutes(config: TollgateConfig): Record<string, RouteEntry
       description:
         "Sample quote JSON from upstream (or built-in mock). Pay-per-call via x402 USDC.",
       extensions: quoteExt,
+    },
+    "GET /v1/fetch-md": {
+      price: config.price,
+      networks: [config.network],
+      description:
+        "Fetch a public http(s) URL and return Markdown. Pay-per-call via x402 USDC.",
+      extensions: fetchMdExt,
     },
   };
 
@@ -68,6 +81,30 @@ function buildGatedHttpRoutes(config: TollgateConfig): Record<string, RouteEntry
   }
 
   return routes;
+}
+
+/** Ensure unpaid 402 responses keep protocol headers and include a readable JSON body. */
+function withReadable402Body(
+  middleware: RequestHandler,
+  config: TollgateConfig,
+): RequestHandler {
+  return (req, res, next) => {
+    const originalJson = res.json.bind(res);
+    res.json = ((body?: unknown) => {
+      if (
+        res.statusCode === 402 &&
+        (body === undefined ||
+          body === null ||
+          (typeof body === "object" &&
+            !Array.isArray(body) &&
+            Object.keys(body as object).length === 0))
+      ) {
+        return originalJson(paymentRequiredJsonBody(config));
+      }
+      return originalJson(body);
+    }) as typeof res.json;
+    return middleware(req, res, next);
+  };
 }
 
 /**
@@ -91,10 +128,12 @@ export async function createLivePaymentLayer(config: TollgateConfig): Promise<Pa
     routes: buildGatedHttpRoutes(config),
   });
 
+  const raw = paymentMiddlewareFromHTTPServer(
+    server as unknown as Parameters<typeof paymentMiddlewareFromHTTPServer>[0],
+  );
+
   return {
-    middleware: paymentMiddlewareFromHTTPServer(
-      server as unknown as Parameters<typeof paymentMiddlewareFromHTTPServer>[0],
-    ),
+    middleware: withReadable402Body(raw, config),
     mode: "live",
     payToEvmAddress: server.payToEvmAddress,
   };
@@ -112,6 +151,7 @@ export function createDemoPaymentLayer(config: TollgateConfig): PaymentLayer {
   const amount = dollarPriceToAtomic(config.price, usdc.decimals);
   const quoteExt = httpQuoteBazaarExtension();
   const proxyExt = httpProxyBazaarExtension();
+  const fetchMdExt = httpFetchMdBazaarExtension();
 
   const middleware: RequestHandler = (req, res, next) => {
     if (isFreePath(req.path) || !isGatedPath(req.path, config.gatedPrefix)) {
@@ -149,17 +189,23 @@ export function createDemoPaymentLayer(config: TollgateConfig): PaymentLayer {
     const bazaar =
       req.path === "/v1/quote" || req.path === "/quote"
         ? quoteExt.bazaar
-        : proxyExt.bazaar;
+        : req.path === "/v1/fetch-md"
+          ? fetchMdExt.bazaar
+          : proxyExt.bazaar;
+
+    const description =
+      req.path === "/v1/quote"
+        ? "Sample quote JSON from upstream (or built-in mock). Pay-per-call via x402 USDC."
+        : req.path === "/v1/fetch-md"
+          ? "Fetch a public http(s) URL and return Markdown. Pay-per-call via x402 USDC."
+          : "Paid reverse-proxy to UPSTREAM_URL via x402-micro-tollgate.";
 
     const paymentRequired = {
       x402Version: 2 as const,
       error: "Payment required",
       resource: {
         url: resourceUrl,
-        description:
-          req.path === "/v1/quote"
-            ? "Sample quote JSON from upstream (or built-in mock). Pay-per-call via x402 USDC."
-            : "Paid reverse-proxy to UPSTREAM_URL via x402-micro-tollgate.",
+        description,
         mimeType: "application/json",
         serviceName: "x402-micro-tollgate",
         tags: ["x402", "gateway", "proxy", "bazaar"],
@@ -192,11 +238,11 @@ export function createDemoPaymentLayer(config: TollgateConfig): PaymentLayer {
         ),
       )
       .setHeader("Cache-Control", "no-store")
-      .json({});
+      .json(paymentRequiredJsonBody(config));
   };
 
   return {
-    middleware,
+    middleware: withReadable402Body(middleware, config),
     mode: "demo",
     payToEvmAddress: payTo,
   };
