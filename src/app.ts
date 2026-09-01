@@ -42,6 +42,13 @@ export async function createApp(options: AppOptions = {}): Promise<CreatedApp> {
 
   const app = express();
   app.disable("x-powered-by");
+  // Honor X-Forwarded-Proto behind TLS terminators (Render). Only when
+  // PUBLIC_BASE_URL is https so local http://127.0.0.1 tests stay unchanged.
+  // @x402/express ExpressAdapter.getUrl() uses req.protocol — without this,
+  // live 402 resource.url is advertised as http:// and Bazaar rejects it.
+  if (/^https:\/\//i.test(config.publicBaseUrl)) {
+    app.set("trust proxy", 1);
+  }
   app.use(cors());
   app.use(requestIdMiddleware);
 

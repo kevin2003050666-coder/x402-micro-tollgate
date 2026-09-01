@@ -2,11 +2,20 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
+import type { RequestHandler } from "express";
 import request from "supertest";
 import { createApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
-import { createDemoPaymentLayer } from "../src/payment.js";
-import { decodePaymentRequiredHeader } from "@x402/core/http";
+import {
+  createDemoPaymentLayer,
+  withPublicResourceUrl,
+  buildPublicResourceUrl,
+} from "../src/payment.js";
+import {
+  decodePaymentRequiredHeader,
+  encodePaymentRequiredHeader,
+} from "@x402/core/http";
+import { paymentRequiredJsonBody } from "../src/payment-required-body.js";
 
 describe("gateway HTTP", () => {
   it("GET /health is free and returns 200", async () => {
@@ -99,6 +108,7 @@ describe("gateway HTTP", () => {
       X402_PAY_TO: "0x1234567890123456789012345678901234567890",
       PRICE: "$0.002",
       GATED_PREFIX: "/v1",
+      PUBLIC_BASE_URL: "https://tollgate.example.com",
     });
     const { app } = await createApp({
       config,
@@ -116,6 +126,12 @@ describe("gateway HTTP", () => {
       "https://github.com/kevin2003050666-coder/x402-micro-tollgate",
     );
     assert.match(res.body.message, /host your own tollgate/i);
+
+    const required = decodePaymentRequiredHeader(res.headers["payment-required"] as string);
+    assert.equal(
+      required.resource?.url,
+      "https://tollgate.example.com/v1/fetch-md?url=https%3A%2F%2Fexample.com",
+    );
   });
 
   it("empty JSON body probe on gated route returns 402 not 400", async () => {
@@ -353,5 +369,132 @@ describe("GET /v1/fetch-md paid demo", () => {
     const res = await request(app).get("/health");
     assert.equal(res.status, 200);
     assert.equal(res.body.status, "ok");
+  });
+});
+
+describe("live PAYMENT-REQUIRED resource.url behind TLS proxy", () => {
+  /**
+   * Mimics @x402/express ExpressAdapter.getUrl():
+   * `${req.protocol}://${host}${originalUrl}` — without trust proxy this is http://.
+   */
+  function sdkStyle402Middleware(): RequestHandler {
+    return (req, res) => {
+      const sdkUrl = `${req.protocol}://${req.headers.host}${req.originalUrl}`;
+      const paymentRequired = {
+        x402Version: 2 as const,
+        error: "Payment required",
+        resource: {
+          url: sdkUrl,
+          description: "test",
+          mimeType: "application/json",
+        },
+        accepts: [
+          {
+            scheme: "exact",
+            network: "eip155:8453" as `${string}:${string}`,
+            amount: "1000",
+            asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+            payTo: "0x1234567890123456789012345678901234567890" as `0x${string}`,
+            maxTimeoutSeconds: 300,
+          },
+        ],
+      };
+      res
+        .status(402)
+        .setHeader(
+          "PAYMENT-REQUIRED",
+          encodePaymentRequiredHeader(
+            paymentRequired as Parameters<typeof encodePaymentRequiredHeader>[0],
+          ),
+        )
+        .json(paymentRequiredJsonBody(loadConfig({ PUBLIC_BASE_URL: "https://example-host" })));
+    };
+  }
+
+  it("rewrites proxied http resource.url to PUBLIC_BASE_URL https + query", async () => {
+    const config = loadConfig({
+      X402_PAY_TO: "0x1234567890123456789012345678901234567890",
+      PUBLIC_BASE_URL: "https://example-host",
+      GATED_PREFIX: "/v1",
+    });
+    assert.equal(config.publicBaseUrl, "https://example-host");
+
+    const raw = sdkStyle402Middleware();
+    const { app } = await createApp({
+      config,
+      paymentLayer: {
+        mode: "live",
+        payToEvmAddress: config.payTo,
+        middleware: withPublicResourceUrl(raw, config),
+      },
+      disableMcp: true,
+    });
+
+    // Simulate Render: Node connection is HTTP; proxy sets X-Forwarded-Proto.
+    const res = await request(app)
+      .get("/v1/fetch-md")
+      .query({ url: "https://example.com" })
+      .set("X-Forwarded-Proto", "https")
+      .set("Host", "example-host");
+
+    assert.equal(res.status, 402);
+    assert.ok(res.headers["payment-required"]);
+
+    const required = decodePaymentRequiredHeader(
+      res.headers["payment-required"] as string,
+    );
+    const url = required.resource?.url ?? "";
+    assert.match(url, /^https:\/\//);
+    assert.equal(
+      url,
+      "https://example-host/v1/fetch-md?url=https%3A%2F%2Fexample.com",
+    );
+    assert.equal(url, buildPublicResourceUrl(config, { originalUrl: "/v1/fetch-md?url=https%3A%2F%2Fexample.com" }));
+  });
+
+  it("enables trust proxy when PUBLIC_BASE_URL is https", async () => {
+    const config = loadConfig({
+      PUBLIC_BASE_URL: "https://example-host",
+    });
+    let sawProtocol: string | undefined;
+    const probe: RequestHandler = (req, res) => {
+      sawProtocol = req.protocol;
+      res.status(200).json({ protocol: req.protocol });
+    };
+    const { app } = await createApp({
+      config,
+      paymentLayer: { mode: "demo", middleware: probe },
+      disableMcp: true,
+    });
+
+    const gated = await request(app)
+      .get("/v1/quote")
+      .set("X-Forwarded-Proto", "https");
+    assert.equal(gated.status, 200);
+    assert.equal(sawProtocol, "https");
+    assert.equal(gated.body.protocol, "https");
+  });
+
+  it("does not enable trust proxy for local http PUBLIC_BASE_URL", async () => {
+    const config = loadConfig({
+      PORT: "8402",
+    });
+    assert.match(config.publicBaseUrl, /^http:\/\/127\.0\.0\.1/);
+    let sawProtocol: string | undefined;
+    const probe: RequestHandler = (req, res) => {
+      sawProtocol = req.protocol;
+      res.status(200).json({ protocol: req.protocol });
+    };
+    const { app } = await createApp({
+      config,
+      paymentLayer: { mode: "demo", middleware: probe },
+      disableMcp: true,
+    });
+
+    const gated = await request(app)
+      .get("/v1/quote")
+      .set("X-Forwarded-Proto", "https");
+    assert.equal(gated.status, 200);
+    assert.equal(sawProtocol, "http");
   });
 });

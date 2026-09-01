@@ -1,7 +1,10 @@
-import type { RequestHandler } from "express";
+import type { Request, RequestHandler, Response } from "express";
 import { createX402Server } from "@coinbase/cdp-sdk/x402";
 import { paymentMiddlewareFromHTTPServer } from "@x402/express";
-import { encodePaymentRequiredHeader } from "@x402/core/http";
+import {
+  decodePaymentRequiredHeader,
+  encodePaymentRequiredHeader,
+} from "@x402/core/http";
 import type { TollgateConfig } from "./config.js";
 import { gatedRoutePatterns, isFreePath, isGatedPath } from "./config.js";
 import {
@@ -83,6 +86,78 @@ function buildGatedHttpRoutes(config: TollgateConfig): Record<string, RouteEntry
   return routes;
 }
 
+/**
+ * Public resource URL for Bazaar / PAYMENT-REQUIRED.
+ * Prefer PUBLIC_BASE_URL so TLS terminators (Render) never advertise http://.
+ * Preserves path + query (fetch-md needs ?url=).
+ */
+export function buildPublicResourceUrl(
+  config: TollgateConfig,
+  req: Pick<Request, "originalUrl">,
+): string {
+  const pathAndQuery = req.originalUrl.startsWith("/")
+    ? req.originalUrl
+    : `/${req.originalUrl}`;
+  return `${config.publicBaseUrl}${pathAndQuery}`;
+}
+
+/**
+ * Live SDK builds resource.url via ExpressAdapter.getUrl() =
+ * `${req.protocol}://${host}${originalUrl}`. Behind Render, Node sees http
+ * unless trust proxy is on. createX402Server has no publicBaseUrl option, so
+ * rewrite PAYMENT-REQUIRED to PUBLIC_BASE_URL + path + query.
+ */
+export function withPublicResourceUrl(
+  middleware: RequestHandler,
+  config: TollgateConfig,
+): RequestHandler {
+  return (req, res, next) => {
+    const rewrite = (value: unknown): unknown => {
+      if (typeof value !== "string" || !value) return value;
+      try {
+        const decoded = decodePaymentRequiredHeader(value);
+        if (!decoded.resource || typeof decoded.resource !== "object") {
+          return value;
+        }
+        const resource = decoded.resource as { url?: string } & Record<
+          string,
+          unknown
+        >;
+        resource.url = buildPublicResourceUrl(config, req);
+        return encodePaymentRequiredHeader(
+          decoded as Parameters<typeof encodePaymentRequiredHeader>[0],
+        );
+      } catch {
+        return value;
+      }
+    };
+
+    const originalSetHeader = res.setHeader.bind(res);
+    res.setHeader = ((name: string, value: unknown) => {
+      if (String(name).toLowerCase() === "payment-required") {
+        value = rewrite(value);
+      }
+      return originalSetHeader(name, value as string);
+    }) as Response["setHeader"];
+
+    const originalAppend = res.appendHeader?.bind(res);
+    if (originalAppend) {
+      res.appendHeader = ((name: string, value: string | readonly string[]) => {
+        if (String(name).toLowerCase() === "payment-required") {
+          if (Array.isArray(value)) {
+            value = value.map((v) => String(rewrite(v)));
+          } else {
+            value = String(rewrite(value));
+          }
+        }
+        return originalAppend(name, value);
+      }) as Response["appendHeader"];
+    }
+
+    return middleware(req, res, next);
+  };
+}
+
 /** Ensure unpaid 402 responses keep protocol headers and include a readable JSON body. */
 function withReadable402Body(
   middleware: RequestHandler,
@@ -133,7 +208,7 @@ export async function createLivePaymentLayer(config: TollgateConfig): Promise<Pa
   );
 
   return {
-    middleware: withReadable402Body(raw, config),
+    middleware: withReadable402Body(withPublicResourceUrl(raw, config), config),
     mode: "live",
     payToEvmAddress: server.payToEvmAddress,
   };
@@ -184,8 +259,7 @@ export function createDemoPaymentLayer(config: TollgateConfig): PaymentLayer {
       return;
     }
 
-    const resourcePath = req.path === "/v1/quote" ? "/v1/quote" : req.path;
-    const resourceUrl = `${config.publicBaseUrl}${resourcePath}`;
+    const resourceUrl = buildPublicResourceUrl(config, req);
     const bazaar =
       req.path === "/v1/quote" || req.path === "/quote"
         ? quoteExt.bazaar
