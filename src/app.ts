@@ -7,6 +7,7 @@ import { loadConfig, isGatedPath } from "./config.js";
 import { requestIdMiddleware, jsonError } from "./http.js";
 import { createPaymentLayer, type PaymentLayer } from "./payment.js";
 import { createUpstreamHandler } from "./proxy.js";
+import { createFetchMdHandler } from "./fetch-md.js";
 import { mountMcpTransports } from "./mcp/http.js";
 import type { McpPaymentLayer } from "./mcp/payment.js";
 import { resolvePublicDir } from "./static.js";
@@ -19,6 +20,8 @@ export interface AppOptions {
   mcpPaymentLayer?: McpPaymentLayer;
   /** Inject upstream handler (tests). */
   upstreamHandler?: RequestHandler;
+  /** Inject paid GET /v1/fetch-md handler (tests). */
+  fetchMdHandler?: RequestHandler;
   /** Skip mounting MCP transports (unit tests that only need HTTP). */
   disableMcp?: boolean;
 }
@@ -101,6 +104,9 @@ export async function createApp(options: AppOptions = {}): Promise<CreatedApp> {
 
   // HTTP Payment gate — free paths pass through; gated paths require x402 payment.
   app.use(payment.middleware);
+
+  // In-process paid demo (same gate as /v1/quote) — before upstream proxy.
+  app.get("/v1/fetch-md", options.fetchMdHandler ?? createFetchMdHandler());
 
   // After payment (or free path), forward to upstream / mock.
   app.use(upstream);

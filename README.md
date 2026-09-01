@@ -23,6 +23,7 @@ cd x402-micro-tollgate && cp .env.example .env
 npm i && npm start
 # curl http://127.0.0.1:8402/health   → 200
 # curl http://127.0.0.1:8402/v1/quote → 402
+# curl "http://127.0.0.1:8402/v1/fetch-md?url=https://example.com" → 402 (paid HTML→Markdown demo)
 ```
 
 Alternative one-liner: `docker compose up --build`
@@ -110,10 +111,11 @@ Launch tip: share your `/mcp` or `/v1/quote` URL in Discord **#x402** after that
 
 ```
 Agents / clients
-   ├─ HTTP  /v1/*     → x402 402 (+ bazaar) or proxy → UPSTREAM_URL
-   ├─ GET   /health   → free
-   ├─ GET   /         → developer landing (EN / 中文)
-   └─ MCP   /mcp      → server_info (free), get_quote + proxy_request (paid + bazaar)
+   ├─ HTTP  /v1/*          → x402 402 (+ bazaar) or proxy → UPSTREAM_URL
+   ├─ GET   /v1/fetch-md   → paid HTML→Markdown demo (same x402 gate)
+   ├─ GET   /health        → free
+   ├─ GET   /              → developer landing (EN / 中文)
+   └─ MCP   /mcp           → server_info (free), get_quote + proxy_request (paid + bazaar)
 ```
 
 | Surface | Stack |

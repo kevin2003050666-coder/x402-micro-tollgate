@@ -72,6 +72,10 @@ describe("gateway HTTP", () => {
     const res = await request(app).get("/v1/quote");
     assert.equal(res.status, 402);
     assert.ok(res.headers["payment-required"]);
+    assert.equal(res.body.error, "Payment Required");
+    assert.equal(res.body.price, "$0.001 USDC");
+    assert.match(res.body.doc, /kevin2003050666-coder\/x402-micro-tollgate/);
+    assert.match(res.body.message, /paywall/i);
 
     const required = decodePaymentRequiredHeader(res.headers["payment-required"] as string);
     assert.equal(required.x402Version, 2);
@@ -84,6 +88,30 @@ describe("gateway HTTP", () => {
     assert.ok(required.extensions?.bazaar);
     const bazaar = required.extensions!.bazaar as { discoverable?: boolean };
     assert.equal(bazaar.discoverable, true);
+  });
+
+  it("unpaid GET /v1/fetch-md returns 402 with readable JSON body", async () => {
+    const config = loadConfig({
+      X402_PAY_TO: "0x1234567890123456789012345678901234567890",
+      PRICE: "$0.002",
+      GATED_PREFIX: "/v1",
+    });
+    const { app } = await createApp({
+      config,
+      paymentLayer: createDemoPaymentLayer(config),
+      disableMcp: true,
+    });
+
+    const res = await request(app).get("/v1/fetch-md").query({ url: "https://example.com" });
+    assert.equal(res.status, 402);
+    assert.ok(res.headers["payment-required"]);
+    assert.equal(res.body.error, "Payment Required");
+    assert.equal(res.body.price, "$0.002 USDC");
+    assert.equal(
+      res.body.doc,
+      "https://github.com/kevin2003050666-coder/x402-micro-tollgate",
+    );
+    assert.match(res.body.message, /host your own tollgate/i);
   });
 
   it("empty JSON body probe on gated route returns 402 not 400", async () => {
@@ -223,5 +251,103 @@ describe("proxy wiring to real upstream", () => {
     const res = await request(app).get("/v1/secret");
     assert.equal(res.status, 402);
     assert.equal(hits, 0);
+  });
+});
+
+describe("GET /v1/fetch-md paid demo", () => {
+  let fixture: http.Server;
+  let fixtureUrl: string;
+
+  before(async () => {
+    fixture = http.createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(
+        `<!doctype html><html><head><title>Fixture Page</title></head>` +
+          `<body><h1>Hello Agents</h1><p>Paid <strong>markdown</strong> demo.</p></body></html>`,
+      );
+    });
+    await new Promise<void>((resolve) => {
+      fixture.listen(0, "127.0.0.1", () => resolve());
+    });
+    const addr = fixture.address() as AddressInfo;
+    fixtureUrl = `http://127.0.0.1:${addr.port}/`;
+  });
+
+  after(async () => {
+    await new Promise<void>((resolve, reject) => {
+      fixture.close((err) => (err ? reject(err) : resolve()));
+    });
+  });
+
+  it("demo-settled fetch of local HTML fixture returns markdown", async () => {
+    const config = loadConfig({
+      X402_PAY_TO: "0x1234567890123456789012345678901234567890",
+    });
+    const { createFetchMdHandler } = await import("../src/fetch-md.js");
+    const { app } = await createApp({
+      config,
+      paymentLayer: createDemoPaymentLayer(config),
+      disableMcp: true,
+      // Fixture is loopback; production handler blocks private IPs.
+      fetchMdHandler: createFetchMdHandler({
+        assertSafeUrl: async (raw) => new URL(raw),
+      }),
+    });
+
+    const res = await request(app)
+      .get("/v1/fetch-md")
+      .query({ url: fixtureUrl })
+      .set("PAYMENT-SIGNATURE", "demo-settled");
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.url, fixtureUrl);
+    assert.equal(res.body.title, "Fixture Page");
+    assert.match(res.body.markdown, /# Hello Agents/);
+    assert.match(res.body.markdown, /\*\*markdown\*\*/);
+    assert.ok(res.headers["payment-response"]);
+  });
+
+  it("rejects localhost and private URLs after payment", async () => {
+    const config = loadConfig({
+      X402_PAY_TO: "0x1234567890123456789012345678901234567890",
+    });
+    const { app } = await createApp({
+      config,
+      paymentLayer: createDemoPaymentLayer(config),
+      disableMcp: true,
+    });
+
+    const local = await request(app)
+      .get("/v1/fetch-md")
+      .query({ url: "http://127.0.0.1/" })
+      .set("PAYMENT-SIGNATURE", "demo-settled");
+    assert.equal(local.status, 400);
+    assert.equal(local.body.error.code, "ssrf_blocked");
+
+    const privateIp = await request(app)
+      .get("/v1/fetch-md")
+      .query({ url: "http://192.168.1.10/secret" })
+      .set("PAYMENT-SIGNATURE", "demo-settled");
+    assert.equal(privateIp.status, 400);
+    assert.equal(privateIp.body.error.code, "ssrf_blocked");
+
+    const fileScheme = await request(app)
+      .get("/v1/fetch-md")
+      .query({ url: "file:///etc/passwd" })
+      .set("PAYMENT-SIGNATURE", "demo-settled");
+    assert.equal(fileScheme.status, 400);
+    assert.equal(fileScheme.body.error.code, "invalid_scheme");
+  });
+
+  it("GET /health remains free after fetch-md wiring", async () => {
+    const config = loadConfig({});
+    const { app } = await createApp({
+      config,
+      paymentLayer: createDemoPaymentLayer(config),
+      disableMcp: true,
+    });
+    const res = await request(app).get("/health");
+    assert.equal(res.status, 200);
+    assert.equal(res.body.status, "ok");
   });
 });
