@@ -4,38 +4,30 @@
 
 Thin seller-side [x402](https://docs.cdp.coinbase.com/x402/quickstart-for-sellers) gateway + MCP server. Unpaid gated HTTP → `402`. Agents pay USDC, then the request is proxied to your upstream. Same process exposes MCP tools that charge per call. Paid surfaces declare the **Bazaar** discovery extension so agents can find you after a real CDP settlement.
 
-Self-host is free (MIT). Hosted waitlist: **$9.90/month** — see `/` or email `2767111713@qq.com`.
+**Hosted waitlist — $9.90/mo.** Don’t want to run the node? Skip SSL, public IP, and uptime babysitting — we host the tollgate. Email [`2767111713@qq.com`](mailto:2767111713@qq.com?subject=x402-micro-tollgate%20hosted%20waitlist%20%249.90) (same CTA on `/`).
 
-Repo: [github.com/kevin2003050666-coder/x402-micro-tollgate](https://github.com/kevin2003050666-coder/x402-micro-tollgate)
+Self-host is free (MIT). Repo: [github.com/kevin2003050666-coder/x402-micro-tollgate](https://github.com/kevin2003050666-coder/x402-micro-tollgate)
 
 > Not a full A2A marketplace. Not a billing SaaS. A sharp tollgate.
 
 ---
 
-## 5-minute self-host
+## 1-minute quickstart
 
-Requires Node.js 22+ (or Docker).
-
-```bash
-cp .env.example .env
-# Required for live settlement:
-#   CDP_API_KEY_ID, CDP_API_KEY_SECRET, X402_PAY_TO
-# Recommended for Bazaar:
-#   PUBLIC_BASE_URL=https://your.public.host
-npm install && npm start
-# → http://127.0.0.1:8402
-
-# Docker
-docker compose up --build
-```
-
-Smoke test:
+Requires Node.js 22+.
 
 ```bash
-curl -i http://127.0.0.1:8402/health          # 200
-curl -i http://127.0.0.1:8402/v1/quote        # 402 + PAYMENT-REQUIRED (+ bazaar extension)
-open http://127.0.0.1:8402/                   # developer landing
+git clone https://github.com/kevin2003050666-coder/x402-micro-tollgate
+cd x402-micro-tollgate && cp .env.example .env
+# set CDP_API_KEY_ID, CDP_API_KEY_SECRET, X402_PAY_TO (optional: PUBLIC_BASE_URL, UPSTREAM_URL)
+npm i && npm start
+# curl http://127.0.0.1:8402/health   → 200
+# curl http://127.0.0.1:8402/v1/quote → 402
 ```
+
+Alternative one-liner: `docker compose up --build`
+
+Without CDP keys the process runs in **demo mode** (protocol-shaped 402 / MCP PaymentRequired, no on-chain settle).
 
 Cursor `mcp.json`:
 
@@ -68,7 +60,15 @@ Stdio:
 }
 ```
 
-Without CDP keys the process runs in **demo mode** (protocol-shaped 402 / MCP PaymentRequired, no on-chain settle).
+---
+
+## Deploy
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/kevin2003050666-coder/x402-micro-tollgate)
+
+Uses [`render.yaml`](./render.yaml): Node 22, `npm start`, health `/health`, env names from [`.env.example`](./.env.example). Set `CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`, and `X402_PAY_TO` in the dashboard for live settlement; set `PUBLIC_BASE_URL` to your `https://….onrender.com` origin for Bazaar.
+
+**Self-host production:** Docker — `docker compose up --build` (see [`Dockerfile`](./Dockerfile) / [`docker-compose.yml`](./docker-compose.yml)).
 
 ---
 
