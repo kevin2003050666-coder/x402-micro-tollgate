@@ -38,6 +38,8 @@ describe("gateway HTTP", () => {
     assert.match(res.headers["content-type"] ?? "", /html/i);
     assert.match(res.text, /x402-micro-tollgate/);
     assert.match(res.text, /pay-per-call/i);
+    assert.match(res.text, /Coinbase CDP/);
+    assert.match(res.text, /official SDK/i);
     assert.match(res.text, /mailto:2767111713@qq\.com/);
     assert.doesNotMatch(res.text, /__WAITLIST_EMAIL__/);
   });
@@ -53,6 +55,8 @@ describe("gateway HTTP", () => {
     const res = await request(app).get("/zh");
     assert.equal(res.status, 200);
     assert.match(res.headers["content-type"] ?? "", /html/i);
+    assert.match(res.text, /Coinbase CDP/);
+    assert.match(res.text, /官方 SDK/);
   });
 
   it("unpaid gated route returns 402 with PAYMENT-REQUIRED", async () => {

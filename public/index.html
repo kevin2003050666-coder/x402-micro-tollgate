@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>x402-micro-tollgate — Make any API pay-per-call for agents</title>
-  <meta name="description" content="HTTP 402 + MCP tools. Self-host open source. Monetize your API to agents via x402 USDC payments in 5 minutes." />
+  <meta name="description" content="HTTP 402 + MCP tools. Security backed by Coinbase CDP. Self-host open source. Monetize your API to agents via x402 USDC payments in 5 minutes." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@600;700;800&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -122,7 +122,16 @@
       font-size: 1.15rem;
       color: var(--muted);
       max-width: 36rem;
+      margin-bottom: 1rem;
+    }
+    .hero .trust {
+      font-size: 0.98rem;
+      color: var(--ink);
+      max-width: 38rem;
       margin-bottom: 1.75rem;
+      padding-left: 0.85rem;
+      border-left: 2px solid var(--accent);
+      line-height: 1.5;
     }
     .cta-row {
       display: flex;
@@ -278,6 +287,7 @@
         <p class="brand" style="color:var(--accent);font-size:0.95rem" data-i18n="eyebrow">x402-micro-tollgate</p>
         <h1 data-i18n="headline">Make any API pay-per-call for agents in 5 minutes</h1>
         <p class="lead" data-i18n="lead">HTTP 402 + MCP tools. Humans can still hit a free path; agents pay USDC via x402. Sell shovels before the A2A rush.</p>
+        <p class="trust" data-i18n="trust">Security backed by Coinbase CDP. We don't touch your keys or settle payments on custom cryptography — signatures and replay protection are powered natively by Coinbase's official SDK.</p>
         <div class="cta-row">
           <a class="btn btn-primary" href="#self-host" data-i18n="cta_self">Self-host free</a>
           <a class="btn btn-ghost" href="#waitlist" data-i18n="cta_host">Hosted waitlist — $9.90/mo</a>
@@ -365,6 +375,7 @@ docker compose up</pre>
         eyebrow: "x402-micro-tollgate",
         headline: "Make any API pay-per-call for agents in 5 minutes",
         lead: "HTTP 402 + MCP tools. Humans can still hit a free path; agents pay USDC via x402. Sell shovels before the A2A rush.",
+        trust: "Security backed by Coinbase CDP. We don't touch your keys or settle payments on custom cryptography — signatures and replay protection are powered natively by Coinbase's official SDK.",
         cta_self: "Self-host free",
         cta_host: "Hosted waitlist — $9.90/mo",
         self_title: "Self-host (open source)",
@@ -389,6 +400,7 @@ docker compose up</pre>
         eyebrow: "x402-micro-tollgate",
         headline: "5 分钟让任意 API 对 Agent 按次收费",
         lead: "HTTP 402 + MCP 工具。人类仍可走免费路径；Agent 通过 x402 用 USDC 付款。在 A2A 爆发前先卖铲子。",
+        trust: "安全由 Coinbase CDP 提供支撑。我们不接触你的密钥，也不用自定义密码学结算——签名与防重放由 Coinbase 官方 SDK 原生处理。",
         cta_self: "开源自托管",
         cta_host: "托管候补 — $9.90/月",
         self_title: "自托管（开源）",
