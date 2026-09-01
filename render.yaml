@@ -1,0 +1,37 @@
+# Blueprint for https://render.com/deploy?repo=https://github.com/kevin2003050666-coder/x402-micro-tollgate
+# Demo mode works without CDP keys; set secrets below for live settlement + Bazaar.
+services:
+  - type: web
+    name: x402-micro-tollgate
+    runtime: node
+    plan: free
+    buildCommand: NPM_CONFIG_PRODUCTION=false npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: X402_ENVIRONMENT
+        value: production
+      - key: PRICE
+        value: "$0.001"
+      - key: GATED_PREFIX
+        value: /v1
+      # Live settlement (required for on-chain pay):
+      - key: CDP_API_KEY_ID
+        sync: false
+      - key: CDP_API_KEY_SECRET
+        sync: false
+      - key: X402_PAY_TO
+        sync: false
+      # Optional — set after first deploy to your https://….onrender.com origin for Bazaar:
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: UPSTREAM_URL
+        sync: false
+      - key: NETWORK
+        sync: false
+      - key: WAITLIST_EMAIL
+        sync: false
