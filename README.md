@@ -4,6 +4,8 @@
 
 Thin seller-side [x402](https://docs.cdp.coinbase.com/x402/quickstart-for-sellers) gateway + MCP server. Unpaid gated HTTP → `402`. Agents pay USDC, then the request is proxied to your upstream. Same process exposes MCP tools that charge per call. Paid surfaces declare the **Bazaar** discovery extension so agents can find you after a real CDP settlement.
 
+**Security backed by Coinbase CDP.** We don't touch your keys or settle payments on custom cryptography — signatures and replay protection are powered natively by Coinbase's official SDK.
+
 **Hosted waitlist — $9.90/mo.** Don’t want to run the node? Skip SSL, public IP, and uptime babysitting — we host the tollgate. Email [`2767111713@qq.com`](mailto:2767111713@qq.com?subject=x402-micro-tollgate%20hosted%20waitlist%20%249.90) (same CTA on `/`).
 
 Self-host is free (MIT). Repo: [github.com/kevin2003050666-coder/x402-micro-tollgate](https://github.com/kevin2003050666-coder/x402-micro-tollgate)
