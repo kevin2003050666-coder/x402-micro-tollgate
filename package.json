@@ -1,6 +1,6 @@
 {
   "name": "x402-micro-tollgate",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Thin x402 payment gateway + MCP server: charge agents USDC per HTTP route or tool call",
   "type": "module",
   "mcpName": "io.github.kevin2003050666-coder/x402-micro-tollgate",
