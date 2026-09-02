@@ -24,6 +24,9 @@ services:
         sync: false
       - key: CDP_API_KEY_SECRET
         sync: false
+      # Public client key for browser Smart Wallet paywall (safe in frontend):
+      - key: CDP_CLIENT_API_KEY
+        sync: false
       - key: X402_PAY_TO
         sync: false
       # Optional — set after first deploy to your https://….onrender.com origin for Bazaar:

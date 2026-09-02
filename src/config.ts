@@ -30,6 +30,11 @@ export interface TollgateConfig {
   gatedPrefix: string;
   cdpApiKeyId: string | undefined;
   cdpApiKeySecret: string | undefined;
+  /**
+   * Public CDP client / project API key for browser Smart Wallet paywall UX.
+   * Safe to expose to the browser; never put `CDP_API_KEY_SECRET` here.
+   */
+  cdpClientApiKey: string | undefined;
   /** True when CDP facilitator credentials + pay-to are present. */
   useLiveFacilitator: boolean;
   /**
@@ -148,6 +153,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig
 
   const cdpApiKeyId = env.CDP_API_KEY_ID?.trim() || undefined;
   const cdpApiKeySecret = env.CDP_API_KEY_SECRET?.trim() || undefined;
+  const cdpClientApiKey =
+    env.CDP_CLIENT_API_KEY?.trim() ||
+    env.CDP_CLIENT_KEY?.trim() || // alias
+    undefined;
   const port = Number(env.PORT) > 0 ? Number(env.PORT) : 8402;
 
   const publicRaw = env.PUBLIC_BASE_URL?.trim().replace(/\/+$/, "");
@@ -225,6 +234,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig
     gatedPrefix: normalizePrefix(env.GATED_PREFIX),
     cdpApiKeyId,
     cdpApiKeySecret,
+    cdpClientApiKey,
     useLiveFacilitator: Boolean(cdpApiKeyId && cdpApiKeySecret && payTo),
     publicBaseUrl,
     contactEmail,
@@ -256,6 +266,7 @@ export const FREE_PATHS = new Set([
   "/messages",
   "/merchants",
   "/v1/merchants",
+  "/x402/session-token",
 ]);
 
 export function isFreePath(path: string): boolean {

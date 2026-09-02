@@ -116,7 +116,8 @@ Uses [`render.yaml`](./render.yaml): Node 22, `npm start`, health `/health`, env
 | `SELLER` / `X402_SELLER` | — | Permissionless seller EOA (EIP-55 validated; invalid → startup fail) |
 | `FACTORY_ADDRESS` | — | Operator-set `FeeSplitterFactory` for CREATE2 predict when amount ≥ threshold (Base live address in [`contracts/deployments/base.json`](./contracts/deployments/base.json); do not hardcode secrets) |
 | `FEE_FREE_BELOW_USDC` | `10000000` | Atomic USDC (6 decimals). **&lt; $10** → payTo=seller; **≥ $10** → FeeSplitter |
-| `CDP_API_KEY_ID` / `CDP_API_KEY_SECRET` | — | CDP facilitator |
+| `CDP_API_KEY_ID` / `CDP_API_KEY_SECRET` | — | CDP facilitator (+ Onramp session tokens) |
+| `CDP_CLIENT_API_KEY` | — | Public CDP client key for browser Smart Wallet paywall (safe in frontend). Alias: `CDP_CLIENT_KEY` |
 | `PRICE` | `$0.001` | Network default USDC |
 | `NETWORK` | `eip155:84532` / `8453` | CAIP-2 |
 | `X402_ENVIRONMENT` | `development` | or `production` |
@@ -256,21 +257,66 @@ Launch tip: share your `/mcp` or `/v1/quote` URL in Discord **#x402** after that
 
 ---
 
+## Pay in browser (Smart Wallet)
+
+When a **browser** hits a gated route (`Accept: text/html` + Mozilla UA), the gateway returns a thin HTML paywall instead of JSON. Agents / MCP / `curl` keep the JSON 402 body.
+
+### What you get
+
+1. **Connect / create a Coinbase Smart Wallet** via the official [`@x402/paywall`](https://www.npmjs.com/package/@x402/paywall) EVM UI (Coinbase Wallet connector — Passkey Smart Wallet, **no MetaMask required**).
+2. **Sign** the x402 `exact` EIP-3009 payment on Base (or Base Sepolia in development) and **retry** with `PAYMENT-SIGNATURE`.
+3. **Get USDC** (optional): when server CDP keys are set, the paywall shows a **Get USDC** button that calls `POST /x402/session-token` and opens [Coinbase Onramp](https://docs.cdp.coinbase.com/onramp/introduction/quickstart). Apple Pay / card appear only if Onramp supports them for your domain — this repo does **not** fake Apple Pay outside Onramp, and does **not** claim a guaranteed “10 second Apple Pay” without Portal production access.
+
+### Setup (buyer UX)
+
+```bash
+# .env — server secrets stay on the host
+CDP_API_KEY_ID=…
+CDP_API_KEY_SECRET=…
+X402_PAY_TO=0x…          # or SELLER=0x…
+
+# Public client key only (browser-safe)
+CDP_CLIENT_API_KEY=…     # from portal.cdp.coinbase.com
+
+# Optional but recommended for live demo / Bazaar
+PUBLIC_BASE_URL=https://your.host
+X402_ENVIRONMENT=development   # Base Sepolia (eip155:84532)
+# X402_ENVIRONMENT=production  # Base mainnet (eip155:8453)
+```
+
+| Piece | Role |
+|---|---|
+| `CDP_CLIENT_API_KEY` | Injected into paywall HTML as `window.x402.cdpClientKey` |
+| `CDP_API_KEY_ID` + `CDP_API_KEY_SECRET` | Facilitator settle **and** `POST /x402/session-token` (Onramp JWT) |
+| `POST /x402/session-token` | Free path; body `{ "addresses": [{ "address": "0x…", "blockchains": ["base"] }], "assets": ["USDC"] }` → `{ token }` |
+
+### Honesty / production notes
+
+- **MVP networks:** Base Sepolia (`development`) and Base mainnet (`production` / `NETWORK=eip155:8453`).
+- **Onramp production:** enable Onramp in CDP Portal, allowlist your domain, and complete any Apple Pay domain verification Coinbase requires. Until then, Smart Wallet pay + sign + retry still works; Get USDC may error or omit card rails.
+- **CSP:** the paywall ships inline scripts (same as upstream `@x402/paywall`). Prefer not to set a strict `script-src` without nonces on 402 HTML responses.
+- **Security:** wallet private keys never touch the frontend; only the public client key is embedded. Session tokens are minted server-side.
+
+Try it: open `https://your-host/v1/quote` in Chrome after configuring the keys above.
+
+---
+
 ## What it does
 
 ```
 Agents / clients
-   ├─ HTTP  /v1/*          → x402 402 (+ bazaar) or proxy → UPSTREAM_URL
+   ├─ HTTP  /v1/*          → x402 402 JSON (agents) or Smart Wallet HTML paywall (browsers)
    ├─ GET   /v1/fetch-md   → paid HTML→Markdown demo (same x402 gate)
+   ├─ POST  /x402/session-token → free Onramp session token (when CDP server keys set)
    ├─ GET   /merchants     → free merchant registry (id, label, seller, payTo)
-   ├─ GET   /health        → free
+   ├─ GET   /health        → free (+ paywall config flags)
    ├─ GET   /              → developer landing (EN / 中文)
    └─ MCP   /mcp           → server_info (free), get_quote + proxy_request (paid + bazaar)
 ```
 
 | Surface | Stack |
 |---|---|
-| HTTP | `createX402Server` + `paymentMiddlewareFromHTTPServer` |
+| HTTP | `createX402Server` + `paymentMiddlewareFromHTTPServer` + `@x402/paywall` (browser) |
 | MCP | `x402ResourceServer` + `createCdpFacilitatorClient` + `createPaymentWrapper` + Bazaar extension |
 
 CLI: `npx x402-micro-tollgate` | `--stdio` | `--port N`

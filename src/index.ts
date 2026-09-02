@@ -44,6 +44,14 @@ export {
   TOLLGATE_PAID_HEADER,
 } from "./upstream-trust.js";
 export {
+  createTollgatePaywall,
+  buildPaywallConfig,
+  isBrowserPaymentRequest,
+  SESSION_TOKEN_PATH,
+  type TollgatePaywallConfig,
+} from "./paywall.js";
+export { createSessionTokenHandler, resolveClientIp } from "./session-token.js";
+export {
   isBlockedIp,
   assertSafePublicHttpUrl,
   assertSafePublicHttpUrlPinned,

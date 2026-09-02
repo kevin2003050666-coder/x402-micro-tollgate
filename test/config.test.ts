@@ -98,12 +98,25 @@ describe("config", () => {
     assert.equal(isFreePath("/"), true);
     assert.equal(isFreePath("/merchants"), true);
     assert.equal(isFreePath("/v1/merchants"), true);
+    assert.equal(isFreePath("/x402/session-token"), true);
     assert.equal(isGatedPath("/health", "/v1"), false);
     assert.equal(isGatedPath("/merchants", "/v1"), false);
     assert.equal(isGatedPath("/v1/merchants", "/v1"), false);
+    assert.equal(isGatedPath("/x402/session-token", "/v1"), false);
     assert.equal(isGatedPath("/v1/quote", "/v1"), true);
     assert.equal(isGatedPath("/other", "/v1"), false);
     assert.equal(isGatedPath("/other", ""), true);
+  });
+
+  it("parses CDP_CLIENT_API_KEY for browser paywall", () => {
+    const cfg = loadConfig({
+      CDP_CLIENT_API_KEY: " test-client-key ",
+      CDP_API_KEY_ID: "id",
+      CDP_API_KEY_SECRET: "secret",
+      X402_PAY_TO: "0x1234567890123456789012345678901234567890",
+    });
+    assert.equal(cfg.cdpClientApiKey, "test-client-key");
+    assert.equal(cfg.useLiveFacilitator, true);
   });
 
   it("parses SELLER / FEE_FREE_BELOW_USDC / FACTORY_ADDRESS", () => {
