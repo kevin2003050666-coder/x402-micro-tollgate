@@ -3,7 +3,7 @@
   "name": "io.github.kevin2003050666-coder/x402-micro-tollgate",
   "title": "x402 Micro Tollgate",
   "description": "x402 HTTP 402 + MCP paywall: charge USDC per agent call. Self-host via npx or Docker.",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "websiteUrl": "https://github.com/kevin2003050666-coder/x402-micro-tollgate",
   "repository": {
     "url": "https://github.com/kevin2003050666-coder/x402-micro-tollgate",
@@ -14,7 +14,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "x402-micro-tollgate",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "transport": {
         "type": "stdio"
       },

@@ -12,7 +12,7 @@ Self-host is free (MIT). Repo: [github.com/kevin2003050666-coder/x402-micro-toll
 
 > Not an official Coinbase product. Not a full A2A marketplace. Not a billing SaaS. A sharp tollgate.
 
-### Permissionless seller (one line)
+### Permissionless seller (0.3.0)
 
 ```ts
 import express from "express";
@@ -22,7 +22,9 @@ const app = express();
 app.use("/v1", await x402Tollgate({ seller: process.env.SELLER! }));
 ```
 
-Or set `SELLER` / `X402_SELLER` in `.env` and run `npm start`. **&lt; $10 USDC** per payment → `payTo` = seller EOA (0 protocol fee). **≥ $10** → CREATE2 [`FeeSplitter`](./contracts/README.md) (deploy factory once, `getOrCreate(seller)` before first ≥$10 settle, then `release()`). `MERCHANTS_JSON` stays optional for hosted multi-tenant.
+Or set `SELLER` / `X402_SELLER` in `.env` and run `npm start`. **&lt; $10 USDC** per payment → `payTo` = seller EOA (0 protocol fee). **≥ $10** → CREATE2 [`FeeSplitter`](./contracts/README.md) via `FACTORY_ADDRESS` (operator deploys factory once, `getOrCreate(seller)` before first ≥$10 settle, then `release()`). `MERCHANTS_JSON` stays optional for hosted multi-tenant.
+
+**Factory address is operator-set** — put the live Base `FeeSplitterFactory` in env `FACTORY_ADDRESS` (see [`contracts/deployments/base.json`](./contracts/deployments/base.json)). Do **not** hardcode secrets or private keys in the app.
 
 ---
 
@@ -95,7 +97,7 @@ Uses [`render.yaml`](./render.yaml): Node 22, `npm start`, health `/health`, env
 | `UPSTREAM_URL` | _(unset → mock)_ | Your API origin |
 | `X402_PAY_TO` | — | EVM receive address (live mode SDK init) |
 | `SELLER` / `X402_SELLER` | — | Permissionless seller EOA (EIP-55 validated; invalid → startup fail) |
-| `FACTORY_ADDRESS` | — | `FeeSplitterFactory` for CREATE2 predict when amount ≥ threshold |
+| `FACTORY_ADDRESS` | — | Operator-set `FeeSplitterFactory` for CREATE2 predict when amount ≥ threshold (Base live address in [`contracts/deployments/base.json`](./contracts/deployments/base.json); do not hardcode secrets) |
 | `FEE_FREE_BELOW_USDC` | `10000000` | Atomic USDC (6 decimals). **&lt; $10** → payTo=seller; **≥ $10** → FeeSplitter |
 | `CDP_API_KEY_ID` / `CDP_API_KEY_SECRET` | — | CDP facilitator |
 | `PRICE` | `$0.001` | Network default USDC |
@@ -119,16 +121,16 @@ Uses [`render.yaml`](./render.yaml): Node 22, `npm start`, health `/health`, env
 | `KEEPER_INTERVAL_MS` | `3600000` | Poll interval (1h) |
 | `KEEPER_MIN_USDC` | `1000000` | Min USDC balance (atomic) before `release()` — default $1 |
 
-### Permissionless seller + $10 threshold
+### Permissionless seller + $10 threshold (0.3.0)
 
-Toward **0.3.0**: set `SELLER` (or use `x402Tollgate({ seller })`). No `MERCHANTS_JSON` required.
+**0.3.0**: set `SELLER` (or use `x402Tollgate({ seller })`) and `FACTORY_ADDRESS` for ≥ $10 CREATE2 routing. No `MERCHANTS_JSON` required.
 
 | Amount (USDC atomic, 6 decimals) | `accepts[].payTo` |
 |---|---|
 | **&lt; `10_000_000` ($10)** | seller EOA — **0 protocol fee** |
 | **≥ `10_000_000` ($10)** | CREATE2-predicted `FeeSplitter` for that seller |
 
-x402 `exact` + EIP-3009 only **credits** `payTo` — it does not execute `FeeSplitter` / factory code and does **not** split in the same transaction. For ≥ $10: deploy [`FeeSplitterFactory`](./contracts/README.md), set `FACTORY_ADDRESS`, call `getOrCreate(seller)` before the first such settle, then `release()` later (99.9% / 0.1%). Address typos send funds to the wrong place — the gateway checksum-validates `SELLER` at startup.
+x402 `exact` + EIP-3009 only **credits** `payTo` — it does not execute `FeeSplitter` / factory code and does **not** split in the same transaction. For ≥ $10: set `FACTORY_ADDRESS` to the operator-deployed factory (Base reference: [`contracts/deployments/base.json`](./contracts/deployments/base.json)), call `getOrCreate(seller)` before the first such settle, then `release()` later (99.9% / 0.1%). Address typos send funds to the wrong place — the gateway checksum-validates `SELLER` at startup. Do **not** hardcode private keys or operator secrets in source.
 
 ### Merchant registry (optional hosted multi-tenant)
 
