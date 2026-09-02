@@ -71,6 +71,7 @@ async function buildResourceServer(config: TollgateConfig): Promise<{
     ? createCdpFacilitatorClient({
         apiKeyId: config.cdpApiKeyId,
         apiKeySecret: config.cdpApiKeySecret,
+        ...(config.facilitatorUrl ? { baseUrl: config.facilitatorUrl } : {}),
       })
     : createDemoFacilitator(network);
 

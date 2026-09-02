@@ -115,10 +115,18 @@ Uses [`render.yaml`](./render.yaml): Node 22, `npm start`, health `/health`, env
 | `X402_PAY_TO` | — | EVM receive address (live mode SDK init) |
 | `SELLER` / `X402_SELLER` | — | Permissionless seller EOA (EIP-55 validated; invalid → startup fail) |
 | `FACTORY_ADDRESS` | — | Operator-set `FeeSplitterFactory` for CREATE2 predict when amount ≥ threshold (Base live address in [`contracts/deployments/base.json`](./contracts/deployments/base.json); do not hardcode secrets) |
-| `FEE_FREE_BELOW_USDC` | `10000000` | Atomic USDC (6 decimals). **&lt; $10** → payTo=seller; **≥ $10** → FeeSplitter |
+| `FEE_FREE_BELOW_USDC` / `X402_FEE_FREE_BELOW_USDC` | `10000000` | Atomic USDC (6 decimals). **&lt; $10** → payTo=seller; **≥ $10** → FeeSplitter |
 | `CDP_API_KEY_ID` / `CDP_API_KEY_SECRET` | — | CDP facilitator (+ Onramp session tokens) |
 | `CDP_CLIENT_API_KEY` | — | Public CDP client key for browser Smart Wallet paywall (safe in frontend). Alias: `CDP_CLIENT_KEY` |
+| `X402_FACILITATOR_URL` / `CDP_FACILITATOR_URL` | CDP default | Optional alternate facilitator base URL for MCP (`createCdpFacilitatorClient({ baseUrl })`). Single-vendor; no multi-facilitator routing yet |
 | `PRICE` | `$0.001` | Network default USDC |
+| `X402_MIN_PRICE_USDC` | — | Optional static minimum accept amount (atomic USDC). Effective price = max(PRICE, this, gas floor) |
+| `X402_DYNAMIC_MIN_ENABLED` | `false` | When `true`, Base base-fee oracle may bump min accept / feeFreeBelow if gas would eat too much of the payment |
+| `X402_GAS_COST_MAX_FRACTION` | `0.5` | Bump when estimated gas USD &gt; this fraction of the payment |
+| `X402_GAS_ORACLE_TTL_MS` | `30000` | baseFee cache TTL (clamped 15–60s) |
+| `X402_GAS_RPC_URL` / `BASE_RPC_URL` | public Base RPC | JSON-RPC for `eth_getBlockByNumber` baseFee |
+| `X402_GAS_USED_ESTIMATE` | `100000` | Rough L2 gas units for settle cost estimate |
+| `X402_ETH_USD` | `4000` | Conservative ETH/USD floor (no live FX required) |
 | `NETWORK` | `eip155:84532` / `8453` | CAIP-2 |
 | `X402_ENVIRONMENT` | `development` | or `production` |
 | `GATED_PREFIX` | `/v1` | HTTP paths that require payment |
@@ -178,6 +186,10 @@ CDP `createX402Server` uses a **single global** `payTo` for SDK init (`X402_PAY_
 
 If `X402_PAY_TO` is still an EOA and you only have one merchant, behavior stays simple. Multi-merchant production should point each registry `payTo` at a deployed splitter — x402/`exact` credits that splitter via EIP-3009; call `release()` later (manually or via the optional keeper) to send 99.9% / 0.1%. Same contract on **Base / Arbitrum / Polygon** — see the [multi-chain FeeSplitter matrix](./contracts/README.md#multi-chain-usdc-matrix-production). This is **receive → later `release()`**, not an atomic same-transaction split and not OpenZeppelin `PaymentSplitter`.
 
+### Gas vs micropayment floor (optional)
+
+Micropayments ($0.001–$0.01) **assume Base low fees**. When L2 gas spikes, estimated settle cost can eat most of a tiny payment. Opt in with `X402_DYNAMIC_MIN_ENABLED=true`: a cached Base `baseFee` oracle (TTL 15–60s, no RPC spam) estimates gas USD (`gasUsedEstimate * baseFee * X402_ETH_USD`) and, if that exceeds `X402_GAS_COST_MAX_FRACTION` of the payment (default 50%), bumps the displayed/enforced minimum accept amount and may raise `feeFreeBelow` so FeeSplitter+`release()` isn’t used until larger amounts. Default is **OFF** so demo `$0.001` still works under normal conditions. Operators can also set a static `X402_MIN_PRICE_USDC`. Current effective mins are on `GET /health` → `gasFloor`.
+
 ### Security (gateway hardening)
 
 Four defenses buyers and sellers should know about:
@@ -186,6 +198,8 @@ Four defenses buyers and sellers should know about:
 2. **SSRF on `/v1/fetch-md`** — Only `http`/`https`; DNS resolve rejects private/bogon/link-local/metadata; DNS is re-checked before fetch (rebinding defense); redirects are disabled.
 3. **Upstream bypass** — Optional `UPSTREAM_SHARED_SECRET`: after payment, proxy injects `X-Tollgate-Secret` / `X-Tollgate-Paid` / `X-Tollgate-Timestamp`. Your upstream must require them (see snippet below). This is a shared-secret MVP, **not** mTLS.
 4. **Base congestion / settle latency** — `X402_SETTLE_TIMEOUT_MS` (default 3 minutes) is separate from the short verify budget. If settle is still in progress when the waiter expires → `202 { "error": "payment_pending", "retry_with_same_proof": true }`. **Do not** create a new payment and **do not** treat the buyer as failed solely because HTTP timed out — retry the **same** proof; the gateway resumes without double-settling.
+
+CDP facilitator is a **single-vendor** settle dependency by default; see [SECURITY.md](./SECURITY.md) for `X402_FACILITATOR_URL` (alternate facilitator when available — no multi-facilitator routing yet).
 
 ### Payment proof idempotency + settle pending
 

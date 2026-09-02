@@ -7,6 +7,14 @@ import {
 } from "./merchants.js";
 import { assertValidSeller, tryParseAddress } from "./address.js";
 import { DEFAULT_FEE_FREE_BELOW_USDC } from "./resolve-pay-to.js";
+import {
+  DEFAULT_ETH_USD,
+  DEFAULT_GAS_COST_MAX_FRACTION,
+  DEFAULT_GAS_ORACLE_TTL_MS,
+  DEFAULT_GAS_USED_ESTIMATE,
+  clampTtl,
+  defaultRpcUrlForNetwork,
+} from "./gas-floor.js";
 
 loadEnv();
 
@@ -37,6 +45,14 @@ export interface TollgateConfig {
   cdpClientApiKey: string | undefined;
   /** True when CDP facilitator credentials + pay-to are present. */
   useLiveFacilitator: boolean;
+  /**
+   * Optional CDP / alternate x402 facilitator base URL
+   * (`X402_FACILITATOR_URL` or `CDP_FACILITATOR_URL`).
+   * Applied to MCP `createCdpFacilitatorClient({ baseUrl })`. HTTP live
+   * `createX402Server` still uses the CDP default until the SDK exposes an
+   * override — no multi-facilitator routing engine yet.
+   */
+  facilitatorUrl: string | undefined;
   /**
    * Public https origin for Bazaar resource URLs (no trailing slash).
    * Without this, demos use http://127.0.0.1:PORT — Bazaar listing is a no-op until set + one CDP settlement.
@@ -85,10 +101,31 @@ export interface TollgateConfig {
   /**
    * USDC atomic threshold: amount &lt; this → payTo = seller (0 protocol fee).
    * Default 10_000_000 ($10). Amount ≥ threshold → CREATE2 FeeSplitter.
+   * Env: `FEE_FREE_BELOW_USDC` or `X402_FEE_FREE_BELOW_USDC`.
    */
   feeFreeBelowUsdc: bigint;
   /** FeeSplitterFactory address for CREATE2 predict (≥ threshold). */
   factoryAddress: `0x${string}` | undefined;
+  /**
+   * Static minimum accept amount in atomic USDC (`X402_MIN_PRICE_USDC`).
+   * 0 = unset (use PRICE only, unless dynamic gas floor bumps).
+   */
+  minPriceUsdc: bigint;
+  /**
+   * When true, Base gas oracle may raise effective min price / feeFreeBelow
+   * if estimated gas exceeds `gasCostMaxFraction` of the payment. Default OFF.
+   */
+  dynamicMinEnabled: boolean;
+  /** Max gas-cost / payment ratio before bumping (default 0.5). */
+  gasCostMaxFraction: number;
+  /** Public Base JSON-RPC for baseFee (cached). */
+  gasOracleRpcUrl: string;
+  /** Base-fee cache TTL ms (clamped 15–60s). */
+  gasOracleTtlMs: number;
+  /** Rough L2 gas units for settle estimate. */
+  gasUsedEstimate: number;
+  /** Conservative ETH/USD floor for gas→USD (no live FX required). */
+  ethUsd: number;
 }
 
 const DEFAULT_NETWORK_BY_ENV: Record<X402Environment, string> = {
@@ -119,10 +156,39 @@ function parseFeeFreeBelow(raw: string | undefined): bigint {
   const trimmed = raw.trim();
   if (!/^\d+$/.test(trimmed)) {
     throw new Error(
-      `Invalid FEE_FREE_BELOW_USDC: "${raw}" (expected non-negative integer atomic USDC)`,
+      `Invalid FEE_FREE_BELOW_USDC / X402_FEE_FREE_BELOW_USDC: "${raw}" (expected non-negative integer atomic USDC)`,
     );
   }
   return BigInt(trimmed);
+}
+
+function parseAtomicUsdcEnv(raw: string | undefined, label: string): bigint {
+  if (raw === undefined || raw.trim() === "") return 0n;
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    throw new Error(`Invalid ${label}: "${raw}" (expected non-negative integer atomic USDC)`);
+  }
+  return BigInt(trimmed);
+}
+
+function parsePositiveNumber(raw: string | undefined, fallback: number, label: string): number {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new Error(`Invalid ${label}: "${raw}" (expected positive number)`);
+  }
+  return n;
+}
+
+function parseFacilitatorUrl(raw: string | undefined): string | undefined {
+  const trimmed = raw?.trim();
+  if (!trimmed) return undefined;
+  if (!/^https?:\/\//i.test(trimmed)) {
+    throw new Error(
+      `Invalid X402_FACILITATOR_URL / CDP_FACILITATOR_URL: "${raw}" (expected http(s) URL)`,
+    );
+  }
+  return trimmed.replace(/\/+$/, "");
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig {
@@ -214,7 +280,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig
     env.X402_UPSTREAM_SECRET?.trim() ||
     undefined;
 
-  const feeFreeBelowUsdc = parseFeeFreeBelow(env.FEE_FREE_BELOW_USDC);
+  const feeFreeBelowUsdc = parseFeeFreeBelow(
+    env.FEE_FREE_BELOW_USDC ?? env.X402_FEE_FREE_BELOW_USDC,
+  );
   const factoryRaw = env.FACTORY_ADDRESS?.trim();
   const factoryAddress = factoryRaw ? tryParseAddress(factoryRaw) : undefined;
   if (factoryRaw && !factoryAddress) {
@@ -222,6 +290,43 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig
       `Invalid FACTORY_ADDRESS: "${factoryRaw}" is not a valid EVM address (check EIP-55 checksum)`,
     );
   }
+
+  const minPriceUsdc = parseAtomicUsdcEnv(env.X402_MIN_PRICE_USDC, "X402_MIN_PRICE_USDC");
+  const dynamicMinEnabled =
+    env.X402_DYNAMIC_MIN_ENABLED?.trim().toLowerCase() === "true";
+
+  const fractionRaw = env.X402_GAS_COST_MAX_FRACTION?.trim();
+  let gasCostMaxFraction = DEFAULT_GAS_COST_MAX_FRACTION;
+  if (fractionRaw) {
+    const n = Number(fractionRaw);
+    if (!Number.isFinite(n) || n <= 0 || n > 1) {
+      throw new Error(
+        `Invalid X402_GAS_COST_MAX_FRACTION: "${fractionRaw}" (expected (0, 1])`,
+      );
+    }
+    gasCostMaxFraction = n;
+  }
+
+  const gasOracleTtlMs = clampTtl(
+    Number(env.X402_GAS_ORACLE_TTL_MS) > 0
+      ? Number(env.X402_GAS_ORACLE_TTL_MS)
+      : DEFAULT_GAS_ORACLE_TTL_MS,
+  );
+  const gasUsedEstimate = Math.floor(
+    parsePositiveNumber(
+      env.X402_GAS_USED_ESTIMATE,
+      DEFAULT_GAS_USED_ESTIMATE,
+      "X402_GAS_USED_ESTIMATE",
+    ),
+  );
+  const ethUsd = parsePositiveNumber(env.X402_ETH_USD, DEFAULT_ETH_USD, "X402_ETH_USD");
+  const gasOracleRpcUrl =
+    env.X402_GAS_RPC_URL?.trim() ||
+    env.BASE_RPC_URL?.trim() ||
+    defaultRpcUrlForNetwork(network);
+  const facilitatorUrl = parseFacilitatorUrl(
+    env.X402_FACILITATOR_URL ?? env.CDP_FACILITATOR_URL,
+  );
 
   return {
     port,
@@ -236,6 +341,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig
     cdpApiKeySecret,
     cdpClientApiKey,
     useLiveFacilitator: Boolean(cdpApiKeyId && cdpApiKeySecret && payTo),
+    facilitatorUrl,
     publicBaseUrl,
     contactEmail,
     feeBps,
@@ -250,6 +356,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig
     seller,
     feeFreeBelowUsdc,
     factoryAddress,
+    minPriceUsdc,
+    dynamicMinEnabled,
+    gasCostMaxFraction,
+    gasOracleRpcUrl,
+    gasOracleTtlMs,
+    gasUsedEstimate,
+    ethUsd,
   };
 }
 
