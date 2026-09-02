@@ -59,6 +59,7 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "http-proxy-middleware": "^3.0.7",
+    "viem": "^2.56.2",
     "zod": "^3.25.76"
   },
   "devDependencies": {

@@ -4,9 +4,9 @@
 
 Thin seller-side [x402](https://docs.cdp.coinbase.com/x402/quickstart-for-sellers) gateway + MCP server. Unpaid gated HTTP → `402`. Agents pay USDC, then the request is proxied to your upstream. Same process exposes MCP tools that charge per call. Paid surfaces declare the **Bazaar** discovery extension so agents can find you after a real CDP settlement.
 
-**Security backed by Coinbase CDP.** We don't touch your keys or settle payments on custom cryptography — signatures and replay protection are powered natively by Coinbase's official SDK.
+**Security backed by Coinbase CDP.** We don't touch your keys or settle payments on custom cryptography — EIP-3009 authorization nonces are single-use at the CDP facilitator (source of truth for on-chain uniqueness). The gateway also keeps a short-TTL in-memory fingerprint of `PAYMENT-SIGNATURE` as duplicate-request protection (not a substitute for facilitator nonce checks).
 
-Self-hosted drop-in HTTP 402 + MCP paywall — monetization is the protocol/toll fee (optional **0.1%** [`FeeSplitter`](./contracts/README.md)), not monthly hosting. Questions: [`2767111713@qq.com`](mailto:2767111713@qq.com?subject=x402-micro-tollgate).
+Self-hosted drop-in HTTP 402 + MCP paywall — monetization is the protocol/toll fee (optional **0.1%** via custom [`FeeSplitter`](./contracts/README.md) **receive → later `release()`**, not OpenZeppelin PaymentSplitter and not same-tx atomic split), not monthly hosting. Questions: [`2767111713@qq.com`](mailto:2767111713@qq.com?subject=x402-micro-tollgate).
 
 Self-host is free (MIT). Repo: [github.com/kevin2003050666-coder/x402-micro-tollgate](https://github.com/kevin2003050666-coder/x402-micro-tollgate)
 
@@ -93,7 +93,16 @@ Uses [`render.yaml`](./render.yaml): Node 22, `npm start`, health `/health`, env
 | `FEE_COLLECTOR` | `0xa922…7e30E` | **Fixed operator** wallet for the 0.1% slice after `FeeSplitter.release()` |
 | `MERCHANTS_JSON` | — | Inline merchant registry JSON (preferred on Render) |
 | `MERCHANTS_FILE` | `merchants.json` | File path; falls back to `merchants.example.json` / built-in demo |
-| `DEFAULT_MERCHANT` | `demo` | Used when `?merchant=` / `x-merchant-id` omitted |
+| `DEFAULT_MERCHANT` | `demo` | Used when `?merchant=` / `x-merchant-id` omitted — **agents SHOULD always send merchant id** |
+| `REQUIRE_MERCHANT` | `false` | When `true`, gated paths reject missing merchant id with `400 {error:"merchant_required"}` (no demo fallback) |
+| `PAYMENT_DEDUPE_TTL_MS` | `600000` | In-memory `PAYMENT-SIGNATURE` replay window (10 min). CDP facilitator nonce remains source of truth |
+| `PAYMENT_DEDUPE_MAX_ENTRIES` | `10000` | Max fingerprints in the gateway LRU (no Redis) |
+| `KEEPER_ENABLED` | `false` | Optional FeeSplitter `release()` keeper — **never on by default** |
+| `KEEPER_DRY_RUN` | _(see notes)_ | `true` logs `keeper_would_release` without sending txs |
+| `KEEPER_PRIVATE_KEY` | — | EVM key for live `release()` only (never commit) |
+| `KEEPER_RPC_URL` | Base public RPC | JSON-RPC endpoint for balance + release |
+| `KEEPER_INTERVAL_MS` | `3600000` | Poll interval (1h) |
+| `KEEPER_MIN_USDC` | `1000000` | Min USDC balance (atomic) before `release()` — default $1 |
 
 ### Merchant registry (Plan A)
 
@@ -112,14 +121,25 @@ Operator **`FEE_COLLECTOR`** is fixed: `0xa922F38041B5ee227c96A547F106F1330447e3
      }
    }
    ```
-3. Call gated APIs with `?merchant=acme` or header `x-merchant-id: acme` (case-insensitive). Missing → `DEFAULT_MERCHANT` (`demo`). Unknown merchant on gated paths → `400` `{ "error": "unknown_merchant" }`.
+3. Call gated APIs with `?merchant=acme` or header `x-merchant-id: acme` (case-insensitive). **Agents SHOULD always send merchant id.** If omitted, the gateway falls back to `DEFAULT_MERCHANT` (`demo`) — that means traffic (and USDC) can silently land on the demo FeeSplitter. Set `REQUIRE_MERCHANT=true` to reject missing merchant with `400 { "error": "merchant_required" }`. Unknown merchant on gated paths → `400` `{ "error": "unknown_merchant" }`.
 4. Free listing: `GET /merchants` (also `/v1/merchants`).
 
 **Note:** The Base demo splitter has `seller` = `feeCollector` = operator — fine for demo. Real merchants need their own splitter with their wallet as `seller`.
 
 CDP `createX402Server` uses a **single global** `payTo` for SDK init (`X402_PAY_TO` or the default merchant splitter). Per-request merchant routing rewrites `PAYMENT-REQUIRED` `accepts[].payTo` to the resolved FeeSplitter (same pattern as the https `resource.url` rewrite).
 
-If `X402_PAY_TO` is still an EOA and you only have one merchant, behavior stays simple. Multi-merchant production should point each registry `payTo` at a deployed splitter — x402/`exact` credits that splitter via EIP-3009; call `release()` later to send 99.9% / 0.1%. Same contract on **Base / Arbitrum / Polygon** — see the [multi-chain FeeSplitter matrix](./contracts/README.md#multi-chain-usdc-matrix-production).
+If `X402_PAY_TO` is still an EOA and you only have one merchant, behavior stays simple. Multi-merchant production should point each registry `payTo` at a deployed splitter — x402/`exact` credits that splitter via EIP-3009; call `release()` later (manually or via the optional keeper) to send 99.9% / 0.1%. Same contract on **Base / Arbitrum / Polygon** — see the [multi-chain FeeSplitter matrix](./contracts/README.md#multi-chain-usdc-matrix-production). This is **receive → later `release()`**, not an atomic same-transaction split and not OpenZeppelin `PaymentSplitter`.
+
+### Payment signature dedupe (gateway)
+
+CDP x402 `exact` + EIP-3009 authorizations are **single-use at the facilitator** (nonce). After a successful settle, the Express gateway also records a SHA-256 fingerprint of the `PAYMENT-SIGNATURE` / `payment-signature` header in an in-memory LRU/TTL map (default TTL 10 minutes, max 10 000 entries). Replaying the same signature string on a gated path within that window returns `400 { "error": "payment_replay" }`. No Redis — process-local only. Restart clears the cache; the facilitator remains authoritative for on-chain nonce uniqueness.
+
+### Optional FeeSplitter release keeper
+
+Scaffold in [`src/keeper.ts`](./src/keeper.ts). **Off by default** (`KEEPER_ENABLED` unset/false). When enabled, every `KEEPER_INTERVAL_MS` (default 1h) it checks USDC balances of registry `payTo` FeeSplitter addresses and calls `release()` when balance ≥ `KEEPER_MIN_USDC` (default `$1`).
+
+**Warning:** Gas for `release()` can exceed the **0.1%** operator fee on sub-cent payments — hence the min-balance gate. Do **not** turn this on by default on Render. Prefer `KEEPER_DRY_RUN=true` (logs `keeper_would_release`) before using a real `KEEPER_PRIVATE_KEY`. Never commit keys.
+
 ---
 
 ## Bazaar discovery (agents find sellers)

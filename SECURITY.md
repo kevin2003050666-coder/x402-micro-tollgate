@@ -10,9 +10,11 @@ Do **not** include private keys, CDP secrets, or production pay-to wallet seeds 
 
 ## Scope notes
 
-- This project is a thin x402 seller gateway. Settlement is performed by the **Coinbase CDP facilitator** when live credentials are configured.
+- This project is a thin x402 seller gateway. Settlement is performed by the **Coinbase CDP facilitator** when live credentials are configured. EIP-3009 payment authorization **nonces are single-use at the facilitator** (on-chain uniqueness source of truth).
+- The gateway additionally fingerprints `PAYMENT-SIGNATURE` in a short-TTL in-memory LRU after successful settle to reject duplicate HTTP retries (`400 payment_replay`). This is defense-in-depth only — not a durable store and not a substitute for facilitator nonce checks.
 - Demo mode does not settle on-chain; treat demo payment tokens (`PAYMENT-SIGNATURE: demo-settled`, MCP `_meta` demo payloads) as local-only.
+- Optional FeeSplitter `release()` keeper (`KEEPER_*`) is **off by default**. Never commit `KEEPER_PRIVATE_KEY`.
 
 ## Secrets
 
-Never commit `.env`. Rotate `CDP_API_KEY_*` if exposed. Prefer a dedicated receive address for `X402_PAY_TO`.
+Never commit `.env`. Rotate `CDP_API_KEY_*` if exposed. Prefer a dedicated receive address for `X402_PAY_TO`. Never put keeper or wallet private keys in the repository.
