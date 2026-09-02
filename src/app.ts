@@ -14,6 +14,10 @@ import { resolvePublicDir } from "./static.js";
 import { listMerchantsPublic } from "./merchants.js";
 import { createSessionTokenHandler } from "./session-token.js";
 import { SESSION_TOKEN_PATH } from "./paywall.js";
+import {
+  createGasFloorService,
+  type GasFloorService,
+} from "./gas-floor.js";
 
 export interface AppOptions {
   config?: TollgateConfig;
@@ -27,6 +31,8 @@ export interface AppOptions {
   fetchMdHandler?: RequestHandler;
   /** Skip mounting MCP transports (unit tests that only need HTTP). */
   disableMcp?: boolean;
+  /** Inject gas-floor service (tests). */
+  gasFloor?: GasFloorService;
 }
 
 export interface CreatedApp {
@@ -35,13 +41,21 @@ export interface CreatedApp {
   payment: PaymentLayer;
   mcpPayment?: McpPaymentLayer;
   publicDir: string;
+  gasFloor: GasFloorService;
 }
 
 export async function createApp(options: AppOptions = {}): Promise<CreatedApp> {
   const config = options.config ?? loadConfig();
-  const payment = options.paymentLayer ?? (await createPaymentLayer(config));
+  const gasFloor = options.gasFloor ?? createGasFloorService(config);
+  const payment =
+    options.paymentLayer ?? (await createPaymentLayer(config, { gasFloor }));
   const upstream = options.upstreamHandler ?? createUpstreamHandler(config);
   const publicDir = resolvePublicDir();
+
+  // Warm base-fee cache once at boot when dynamic floor is on (non-blocking).
+  if (config.dynamicMinEnabled) {
+    void gasFloor.refresh();
+  }
 
   const app = express();
   app.disable("x-powered-by");
@@ -69,7 +83,8 @@ export async function createApp(options: AppOptions = {}): Promise<CreatedApp> {
   });
   app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
-  app.get("/health", (_req, res) => {
+  app.get("/health", async (_req, res) => {
+    const mins = await gasFloor.getSnapshot();
     res.status(200).json({
       status: "ok",
       service: "x402-micro-tollgate",
@@ -85,6 +100,24 @@ export async function createApp(options: AppOptions = {}): Promise<CreatedApp> {
       seller: config.seller ?? null,
       factoryAddress: config.factoryAddress ?? null,
       feeFreeBelowUsdc: config.feeFreeBelowUsdc.toString(),
+      price: config.price,
+      facilitatorUrl: config.facilitatorUrl ?? null,
+      gasFloor: {
+        enabled: mins.enabled,
+        minPriceUsdc: mins.minPriceUsdc.toString(),
+        effectiveMinPrice: mins.effectiveMinPrice,
+        effectiveMinPriceAtomic: mins.effectiveMinPriceAtomic.toString(),
+        effectiveFeeFreeBelowUsdc: mins.effectiveFeeFreeBelowUsdc.toString(),
+        estimatedGasCostUsd: mins.estimatedGasCostUsd,
+        baseFeeWei: mins.baseFeeWei,
+        gasCostMaxFraction: mins.gasCostMaxFraction,
+        ethUsd: mins.ethUsd,
+        gasUsedEstimate: mins.gasUsedEstimate,
+        bumped: mins.bumped,
+        reason: mins.reason,
+        oracleTtlMs: mins.oracleTtlMs,
+        cachedAt: mins.cachedAt,
+      },
       mcp: {
         streamableHttp: "/mcp",
         sse: "/sse",
@@ -160,5 +193,5 @@ export async function createApp(options: AppOptions = {}): Promise<CreatedApp> {
     }
   });
 
-  return { app, config, payment, mcpPayment, publicDir };
+  return { app, config, payment, mcpPayment, publicDir, gasFloor };
 }

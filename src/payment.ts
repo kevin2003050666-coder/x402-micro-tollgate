@@ -30,6 +30,12 @@ import {
   type PaymentDedupeStore,
 } from "./payment-dedupe.js";
 import { resolvePayTo } from "./resolve-pay-to.js";
+import {
+  atomicUsdcToDollarPrice,
+  createGasFloorService,
+  dollarPriceToAtomic as dollarPriceToAtomicBigint,
+  type GasFloorService,
+} from "./gas-floor.js";
 
 /** Base Sepolia / Base mainnet default USDC (from @x402/evm defaults). */
 export const DEFAULT_USDC: Record<string, { asset: `0x${string}`; decimals: number }> = {
@@ -51,6 +57,7 @@ function usdcForNetwork(network: string): { asset: `0x${string}`; decimals: numb
 export function resolveSellerPayTo(
   config: TollgateConfig,
   amountAtomic: bigint | string,
+  options?: { feeFreeBelowUsdc?: bigint },
 ): `0x${string}` {
   if (!config.seller) {
     throw new Error("seller is not configured");
@@ -59,7 +66,7 @@ export function resolveSellerPayTo(
   return resolvePayTo({
     amountAtomic,
     seller: config.seller,
-    feeFreeBelowUsdc: config.feeFreeBelowUsdc,
+    feeFreeBelowUsdc: options?.feeFreeBelowUsdc ?? config.feeFreeBelowUsdc,
     factoryAddress: config.factoryAddress,
     feeCollector: config.feeCollector,
     asset: usdc.asset,
@@ -68,20 +75,20 @@ export function resolveSellerPayTo(
 }
 
 function dollarPriceToAtomic(price: string, decimals: number): string {
-  const match = price.trim().match(/^\$(\d+(?:\.\d+)?)$/);
-  if (!match) {
-    return price.trim();
-  }
-  const [whole, frac = ""] = match[1].split(".");
-  const padded = (frac + "0".repeat(decimals)).slice(0, decimals);
-  const atomic = `${whole}${padded}`.replace(/^0+(?=\d)/, "");
-  return atomic || "0";
+  return dollarPriceToAtomicBigint(price, decimals).toString();
+}
+
+export interface PaymentLayerOptions {
+  /** Shared gas-floor service (tests / app). Created from config when omitted. */
+  gasFloor?: GasFloorService;
 }
 
 export interface PaymentLayer {
   middleware: RequestHandler;
   mode: "live" | "demo";
   payToEvmAddress?: string;
+  /** Present when created via createPaymentLayer / createDemoPaymentLayer. */
+  gasFloor?: GasFloorService;
 }
 
 type RouteEntry = {
@@ -253,10 +260,14 @@ export function withMerchantGate(
  * unless trust proxy is on. createX402Server has a single global payTo — rewrite
  * PAYMENT-REQUIRED resource.url to PUBLIC_BASE_URL and accepts[].payTo to the
  * resolved merchant FeeSplitter after the SDK sets the header.
+ *
+ * Also enforces the gas-aware minimum accept amount when the floor is active
+ * (rewrites accepts[].amount upward; does not lower).
  */
 export function withPublicResourceUrl(
   middleware: RequestHandler,
   config: TollgateConfig,
+  gasFloor?: GasFloorService,
 ): RequestHandler {
   return (req, res, next) => {
     const rewrite = (value: unknown): unknown => {
@@ -269,6 +280,23 @@ export function withPublicResourceUrl(
         const resource = decoded.resource as { url?: string } & Record<string, unknown>;
         resource.url = buildPublicResourceUrl(config, req);
 
+        const mins = gasFloor?.getSnapshotSync();
+        const accepts = (decoded as { accepts?: Array<{ amount?: string }> }).accepts;
+        if (mins && Array.isArray(accepts)) {
+          const floor = mins.effectiveMinPriceAtomic;
+          for (const accept of accepts) {
+            if (!accept || accept.amount === undefined) continue;
+            try {
+              const current = BigInt(accept.amount);
+              if (current < floor) {
+                accept.amount = floor.toString();
+              }
+            } catch {
+              // leave non-numeric amounts alone
+            }
+          }
+        }
+
         // CDP SDK payTo is global; per-request payTo is applied here.
         // Registry merchant → fixed FeeSplitter. Seller mode → threshold resolver.
         const { merchant, sellerMode } = getMerchantLocals(req);
@@ -278,9 +306,10 @@ export function withPublicResourceUrl(
             merchant.payTo,
           );
         } else if (sellerMode && config.seller) {
-          const accepts = (decoded as { accepts?: Array<{ amount?: string }> }).accepts;
           const amount = accepts?.[0]?.amount ?? "0";
-          const payTo = resolveSellerPayTo(config, amount);
+          const payTo = resolveSellerPayTo(config, amount, {
+            feeFreeBelowUsdc: mins?.effectiveFeeFreeBelowUsdc,
+          });
           rewritePaymentRequiredPayTo(
             decoded as unknown as Record<string, unknown>,
             payTo,
@@ -325,6 +354,7 @@ export function withPublicResourceUrl(
 function withReadable402Body(
   middleware: RequestHandler,
   config: TollgateConfig,
+  gasFloor?: GasFloorService,
 ): RequestHandler {
   return (req, res, next) => {
     const originalJson = res.json.bind(res);
@@ -337,7 +367,8 @@ function withReadable402Body(
             !Array.isArray(body) &&
             Object.keys(body as object).length === 0))
       ) {
-        return originalJson(paymentRequiredJsonBody(config));
+        const price = gasFloor?.getSnapshotSync().effectiveMinPrice;
+        return originalJson(paymentRequiredJsonBody(config, price ? { price } : undefined));
       }
       return originalJson(body);
     }) as typeof res.json;
@@ -350,6 +381,7 @@ function wrapPaymentMiddleware(
   config: TollgateConfig,
   dedupeCache?: SignatureDedupeCache,
   dedupeStore?: PaymentDedupeStore,
+  gasFloor?: GasFloorService,
 ): RequestHandler {
   // Order: merchant gate → payment idempotency / settle-latency guard → readable 402 / public URL → settle.
   //
@@ -361,7 +393,7 @@ function wrapPaymentMiddleware(
   // - CDP facilitator EIP-3009 nonce remains the on-chain source of truth.
   return withMerchantGate(
     withPaymentSignatureDedupe(
-      withReadable402Body(withPublicResourceUrl(raw, config), config),
+      withReadable402Body(withPublicResourceUrl(raw, config, gasFloor), config, gasFloor),
       {
         cache: dedupeCache,
         store: dedupeStore ?? dedupeCache?.getStore(),
@@ -382,17 +414,42 @@ function wrapPaymentMiddleware(
  * Bazaar: createX402Server auto-injects bazaar; we override with discoverable + schemas.
  * Per-request merchant payTo is applied via PAYMENT-REQUIRED header rewrite (SDK payTo is global).
  */
-export async function createLivePaymentLayer(config: TollgateConfig): Promise<PaymentLayer> {
+export async function createLivePaymentLayer(
+  config: TollgateConfig,
+  options: PaymentLayerOptions = {},
+): Promise<PaymentLayer> {
   if (!config.payTo) {
     throw new Error("X402_PAY_TO is required for live facilitator mode");
   }
 
+  const gasFloor = options.gasFloor ?? createGasFloorService(config);
+
   // Fail fast if seller mode price is ≥ threshold without factory (would 500 on every 402).
   if (config.seller) {
     const usdc = usdcForNetwork(config.network);
-    const amount = dollarPriceToAtomic(config.price, usdc.decimals);
-    resolveSellerPayTo(config, amount);
+    const mins = gasFloor.getSnapshotSync();
+    resolveSellerPayTo(config, mins.effectiveMinPriceAtomic.toString(), {
+      feeFreeBelowUsdc: mins.effectiveFeeFreeBelowUsdc,
+    });
+    // Also validate configured PRICE path for operators who disable dynamic later.
+    resolveSellerPayTo(config, dollarPriceToAtomic(config.price, usdc.decimals), {
+      feeFreeBelowUsdc: mins.effectiveFeeFreeBelowUsdc,
+    });
   }
+
+  // Advertise at least the static min floor in route config; gas bumps rewrite at 402 time.
+  const routeConfig =
+    config.minPriceUsdc > 0n
+      ? {
+          ...config,
+          price: (() => {
+            const priceAtomic = dollarPriceToAtomicBigint(config.price);
+            const floor =
+              priceAtomic > config.minPriceUsdc ? priceAtomic : config.minPriceUsdc;
+            return atomicUsdcToDollarPrice(floor);
+          })(),
+        }
+      : config;
 
   const server = await createX402Server({
     environment: config.environment,
@@ -402,7 +459,7 @@ export async function createLivePaymentLayer(config: TollgateConfig): Promise<Pa
       type: "address",
       evm: config.payTo,
     },
-    routes: buildGatedHttpRoutes(config),
+    routes: buildGatedHttpRoutes(routeConfig),
   });
 
   const paywallConfig = buildPaywallConfig(config);
@@ -414,12 +471,19 @@ export async function createLivePaymentLayer(config: TollgateConfig): Promise<Pa
   );
 
   return {
-    middleware: wrapPaymentMiddleware(raw, config, new SignatureDedupeCache({
-      ttlMs: config.paymentDedupeTtlMs,
-      maxEntries: config.paymentDedupeMaxEntries,
-    })),
+    middleware: wrapPaymentMiddleware(
+      raw,
+      config,
+      new SignatureDedupeCache({
+        ttlMs: config.paymentDedupeTtlMs,
+        maxEntries: config.paymentDedupeMaxEntries,
+      }),
+      undefined,
+      gasFloor,
+    ),
     mode: "live",
     payToEvmAddress: server.payToEvmAddress,
+    gasFloor,
   };
 }
 
@@ -428,12 +492,22 @@ export async function createLivePaymentLayer(config: TollgateConfig): Promise<Pa
  * Returns a protocol-shaped 402 + PAYMENT-REQUIRED (with Bazaar extension) when gated and unpaid.
  * Uses resolved merchant FeeSplitter, or permissionless seller resolvePayTo, as payTo.
  */
-export function createDemoPaymentLayer(config: TollgateConfig): PaymentLayer {
+export function createDemoPaymentLayer(
+  config: TollgateConfig,
+  options: PaymentLayerOptions = {},
+): PaymentLayer {
+  const gasFloor = options.gasFloor ?? createGasFloorService(config);
+
   // Fail fast for misconfigured ≥ threshold seller mode (missing FACTORY_ADDRESS).
   if (config.seller) {
     const usdc = usdcForNetwork(config.network);
-    const amount = dollarPriceToAtomic(config.price, usdc.decimals);
-    resolveSellerPayTo(config, amount);
+    const mins = gasFloor.getSnapshotSync();
+    resolveSellerPayTo(config, mins.effectiveMinPriceAtomic.toString(), {
+      feeFreeBelowUsdc: mins.effectiveFeeFreeBelowUsdc,
+    });
+    resolveSellerPayTo(config, dollarPriceToAtomic(config.price, usdc.decimals), {
+      feeFreeBelowUsdc: mins.effectiveFeeFreeBelowUsdc,
+    });
   }
 
   const fallbackPayTo =
@@ -442,7 +516,6 @@ export function createDemoPaymentLayer(config: TollgateConfig): PaymentLayer {
     config.merchants[config.defaultMerchant]?.payTo ??
     ("0x0000000000000000000000000000000000000001" as `0x${string}`);
   const usdc = usdcForNetwork(config.network);
-  const amount = dollarPriceToAtomic(config.price, usdc.decimals);
   const quoteExt = httpQuoteBazaarExtension();
   const proxyExt = httpProxyBazaarExtension();
   const fetchMdExt = httpFetchMdBazaarExtension();
@@ -480,13 +553,22 @@ export function createDemoPaymentLayer(config: TollgateConfig): PaymentLayer {
       return;
     }
 
+    // Warm oracle in background when enabled; sync snapshot uses cache (or static floors).
+    if (config.dynamicMinEnabled) {
+      void gasFloor.refresh();
+    }
+    const mins = gasFloor.getSnapshotSync();
+    const amount = mins.effectiveMinPriceAtomic.toString();
+
     const { merchant, sellerMode } = getMerchantLocals(req);
     let payTo: `0x${string}`;
     try {
       if (merchant?.payTo) {
         payTo = merchant.payTo;
       } else if (sellerMode && config.seller) {
-        payTo = resolveSellerPayTo(config, amount);
+        payTo = resolveSellerPayTo(config, amount, {
+          feeFreeBelowUsdc: mins.effectiveFeeFreeBelowUsdc,
+        });
       } else {
         payTo = fallbackPayTo;
       }
@@ -559,7 +641,7 @@ export function createDemoPaymentLayer(config: TollgateConfig): PaymentLayer {
       return;
     }
 
-    res.json(paymentRequiredJsonBody(config));
+    res.json(paymentRequiredJsonBody(config, { price: mins.effectiveMinPrice }));
   };
 
   return {
@@ -570,15 +652,21 @@ export function createDemoPaymentLayer(config: TollgateConfig): PaymentLayer {
         ttlMs: config.paymentDedupeTtlMs,
         maxEntries: config.paymentDedupeMaxEntries,
       }),
+      undefined,
+      gasFloor,
     ),
     mode: "demo",
     payToEvmAddress: fallbackPayTo,
+    gasFloor,
   };
 }
 
-export async function createPaymentLayer(config: TollgateConfig): Promise<PaymentLayer> {
+export async function createPaymentLayer(
+  config: TollgateConfig,
+  options: PaymentLayerOptions = {},
+): Promise<PaymentLayer> {
   if (config.useLiveFacilitator) {
-    return createLivePaymentLayer(config);
+    return createLivePaymentLayer(config, options);
   }
-  return createDemoPaymentLayer(config);
+  return createDemoPaymentLayer(config, options);
 }

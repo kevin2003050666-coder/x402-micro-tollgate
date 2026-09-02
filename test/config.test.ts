@@ -135,11 +135,18 @@ describe("config", () => {
     assert.equal(Object.keys(cfg.merchants).length, 0);
   });
 
+  it("accepts X402_FEE_FREE_BELOW_USDC alias", () => {
+    const cfg = loadConfig({ X402_FEE_FREE_BELOW_USDC: "1234567" });
+    assert.equal(cfg.feeFreeBelowUsdc, 1_234_567n);
+  });
+
   it("defaults feeFreeBelowUsdc to 10_000_000 and seller undefined", () => {
     const cfg = loadConfig({});
     assert.equal(cfg.seller, undefined);
     assert.equal(cfg.feeFreeBelowUsdc, 10_000_000n);
     assert.equal(cfg.factoryAddress, undefined);
+    assert.equal(cfg.dynamicMinEnabled, false);
+    assert.equal(cfg.minPriceUsdc, 0n);
   });
 
   it("parses settle/verify timeouts and upstream shared secret aliases", () => {

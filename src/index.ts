@@ -56,3 +56,12 @@ export {
   assertSafePublicHttpUrl,
   assertSafePublicHttpUrlPinned,
 } from "./ssrf.js";
+export {
+  createGasFloorService,
+  computeEffectiveMins,
+  estimateGasCostUsd,
+  dollarPriceToAtomic,
+  atomicUsdcToDollarPrice,
+  type GasFloorService,
+  type GasFloorSnapshot,
+} from "./gas-floor.js";
