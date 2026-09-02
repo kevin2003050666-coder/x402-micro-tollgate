@@ -27,3 +27,24 @@ export {
   type MerchantRegistry,
 } from "./merchants.js";
 export { FEE_SPLITTER_CREATION_BYTECODE } from "./fee-splitter-bytecode.js";
+export {
+  SignatureDedupeCache,
+  MemoryPaymentDedupeStore,
+  KeyMutex,
+  withPaymentSignatureDedupe,
+  paymentIdempotencyKey,
+  type PaymentDedupeStore,
+  type PaymentDedupeRecord,
+  type PaymentDedupeStatus,
+} from "./payment-dedupe.js";
+export {
+  buildUpstreamTrustHeaders,
+  verifyUpstreamTrustHeaders,
+  TOLLGATE_SECRET_HEADER,
+  TOLLGATE_PAID_HEADER,
+} from "./upstream-trust.js";
+export {
+  isBlockedIp,
+  assertSafePublicHttpUrl,
+  assertSafePublicHttpUrlPinned,
+} from "./ssrf.js";

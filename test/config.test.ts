@@ -128,4 +128,23 @@ describe("config", () => {
     assert.equal(cfg.feeFreeBelowUsdc, 10_000_000n);
     assert.equal(cfg.factoryAddress, undefined);
   });
+
+  it("parses settle/verify timeouts and upstream shared secret aliases", () => {
+    const defaults = loadConfig({});
+    assert.equal(defaults.settleTimeoutMs, 180_000);
+    assert.equal(defaults.verifyTimeoutMs, 15_000);
+    assert.equal(defaults.upstreamSharedSecret, undefined);
+
+    const cfg = loadConfig({
+      X402_SETTLE_TIMEOUT_MS: "120000",
+      X402_VERIFY_TIMEOUT_MS: "8000",
+      X402_UPSTREAM_SECRET: "upstream-secret",
+    });
+    assert.equal(cfg.settleTimeoutMs, 120_000);
+    assert.equal(cfg.verifyTimeoutMs, 8_000);
+    assert.equal(cfg.upstreamSharedSecret, "upstream-secret");
+
+    const alias = loadConfig({ UPSTREAM_SHARED_SECRET: "shared" });
+    assert.equal(alias.upstreamSharedSecret, "shared");
+  });
 });

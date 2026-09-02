@@ -289,8 +289,8 @@ describe("gateway HTTP", () => {
     const replay = await request(app)
       .get("/v1/quote")
       .set("PAYMENT-SIGNATURE", "demo-settled");
-    assert.equal(replay.status, 400);
-    assert.deepEqual(replay.body, { error: "payment_replay" });
+    assert.equal(replay.status, 409);
+    assert.equal(replay.body.error, "payment_already_used");
 
     // A distinct settled signature still works (demo accepts x-demo-payment).
     const second = await request(app)

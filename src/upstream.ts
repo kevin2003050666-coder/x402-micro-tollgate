@@ -1,4 +1,8 @@
 import type { TollgateConfig } from "./config.js";
+import {
+  buildUpstreamTrustHeaders,
+  TOLLGATE_TRUST_HEADERS,
+} from "./upstream-trust.js";
 
 export interface MockUpstreamResult {
   status: number;
@@ -91,6 +95,19 @@ export async function forwardUpstreamRequest(
   delete headers["x-demo-payment"];
   delete headers.host;
   delete headers.Host;
+  for (const name of TOLLGATE_TRUST_HEADERS) {
+    delete headers[name];
+    delete headers[name.toLowerCase()];
+  }
+
+  // Post-payment MCP / tool forwards: inject shared-secret trust headers.
+  if (config.upstreamSharedSecret) {
+    const trust = buildUpstreamTrustHeaders(config.upstreamSharedSecret, {
+      method: args.method,
+      path,
+    });
+    Object.assign(headers, trust.headers);
+  }
 
   const init: RequestInit = {
     method: args.method.toUpperCase(),
