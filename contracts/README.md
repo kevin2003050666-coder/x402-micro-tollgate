@@ -71,7 +71,7 @@ For dry-runs only — not required for production readiness:
 
 ## Deploy (Remix) — operator steps
 
-### A) Permissionless factory (recommended toward 0.3.0)
+### A) Permissionless factory (0.3.0)
 
 1. Open [Remix](https://remix.ethereum.org); paste [`FeeSplitter.sol`](./FeeSplitter.sol) + [`FeeSplitterFactory.sol`](./FeeSplitterFactory.sol) (same folder / import path).
 2. Compile with Solidity `0.8.20+`, **optimizer enabled, runs=200** (must match `src/fee-splitter-bytecode.ts` for off-chain CREATE2 predict).
@@ -79,9 +79,10 @@ For dry-runs only — not required for production readiness:
    - `feeCollector_` — `0xa922F38041B5ee227c96A547F106F1330447e30E` (or your override)
    - `asset_` — chain native USDC from the matrix
    - `feeBps_` — `10`
-4. Set gateway `FACTORY_ADDRESS` to the factory, `SELLER` to the seller EOA, `FEE_FREE_BELOW_USDC=10000000`.
-5. Before first payment ≥ $10 to that seller: call `getOrCreate(seller)` once (anyone can call; gas paid by caller).
-6. After USDC accumulates on the splitter, anyone can call `release()` (or optional `KEEPER_*`, **off by default**).
+4. Set gateway `FACTORY_ADDRESS` to the factory (operator-set; do **not** hardcode secrets). Live Base deployment: [`deployments/base.json`](./deployments/base.json).
+5. Set `SELLER` to the seller EOA, `FEE_FREE_BELOW_USDC=10000000`.
+6. Before first payment ≥ $10 to that seller: call `getOrCreate(seller)` once (anyone can call; gas paid by caller).
+7. After USDC accumulates on the splitter, anyone can call `release()` (or optional `KEEPER_*`, **off by default**).
 
 ### B) Hosted multi-tenant (MERCHANTS_JSON — optional compat)
 

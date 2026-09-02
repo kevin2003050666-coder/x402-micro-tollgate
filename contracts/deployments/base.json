@@ -1,0 +1,21 @@
+{
+  "chain": "Base",
+  "caip2": "eip155:8453",
+  "asset": {
+    "symbol": "USDC",
+    "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "decimals": 6,
+    "note": "Native Circle USDC on Base"
+  },
+  "FeeSplitterFactory": {
+    "address": "0x20387e081E6fa05cdE0DBb42765D7C62e70e836a",
+    "feeCollector": "0xa922F38041B5ee227c96A547F106F1330447e30E",
+    "feeBps": 10,
+    "deployTx": "0xf50851007708cade8f5756435462b313437b2925c24d494f989ab64b472b3d2e",
+    "notes": "Operator-deployed live factory. Set FACTORY_ADDRESS to this address for Base production. Do not hardcode secrets; buyers never call the factory."
+  },
+  "threshold": {
+    "FEE_FREE_BELOW_USDC": "10000000",
+    "meaning": "Single payment < $10 USDC → payTo = seller EOA; ≥ $10 → CREATE2 FeeSplitter via this factory"
+  }
+}
