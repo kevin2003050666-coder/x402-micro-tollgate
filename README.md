@@ -6,7 +6,7 @@ Second-scale settlement bridge for agent traffic — the Web3 tollbooth that cle
 
 > 为千万级无支付能力的 AI Agent 提供秒级过桥清算，抽成 0.1% 的 Web3 版 Visa 收费站
 
-**Security backed by Coinbase CDP.** We don't touch your keys or settle payments on custom cryptography — EIP-3009 authorization nonces are single-use at the CDP facilitator (source of truth for on-chain uniqueness). The gateway hardens four buyer/seller trust surfaces: **payment-proof replay/race**, **SSRF on URL fetch**, **upstream bypass (shared-secret trust header)**, and **Base congestion / settle-latency** (pending + retry same proof — never treat HTTP timeout alone as “payment failed”).
+**Security backed by Coinbase CDP.** We don't touch your keys or settle payments on custom cryptography — EIP-3009 authorization nonces are single-use at the CDP facilitator (source of truth for on-chain uniqueness). The gateway hardens four buyer/seller trust surfaces: **payment-proof replay/race**, **SSRF on URL fetch**, **upstream bypass (shared-secret trust header)**, and **Base congestion / settle-latency** (pending + retry same proof — never treat an HTTP timeout alone as “payment failed”).
 
 ## What it is
 
