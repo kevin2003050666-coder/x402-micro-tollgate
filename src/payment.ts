@@ -730,7 +730,6 @@ export function createDemoPaymentLayer(
       void gasFloor.refresh();
     }
     const mins = gasFloor.getSnapshotSync();
-    const amount = mins.effectiveMinPriceAtomic.toString();
 
     const { merchant, sellerMode } = getMerchantLocals(req);
     const fallbackPayToLocal =
