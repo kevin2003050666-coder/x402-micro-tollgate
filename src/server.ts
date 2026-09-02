@@ -1,9 +1,15 @@
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
+import { loadKeeperConfig, startFeeSplitterKeeper } from "./keeper.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
   const { app, payment, mcpPayment } = await createApp({ config });
+
+  // Optional FeeSplitter release keeper — OFF unless KEEPER_ENABLED=true.
+  // Never enabled by default on Render; gas can dwarf 0.1% fees on sub-cent payments.
+  const keeperConfig = loadKeeperConfig(process.env, config);
+  const keeper = startFeeSplitterKeeper(keeperConfig);
 
   app.listen(config.port, () => {
     console.log(
@@ -18,6 +24,9 @@ async function main(): Promise<void> {
         gatedPrefix: config.gatedPrefix || "*",
         upstream: config.upstreamUrl ?? "mock",
         payTo: payment.payToEvmAddress ?? mcpPayment?.payTo ?? null,
+        keeper: keeper
+          ? { enabled: true, dryRun: keeperConfig.dryRun, intervalMs: keeperConfig.intervalMs }
+          : { enabled: false },
         health: `http://127.0.0.1:${config.port}/health`,
         mcp: `http://127.0.0.1:${config.port}/mcp`,
         sse: `http://127.0.0.1:${config.port}/sse`,

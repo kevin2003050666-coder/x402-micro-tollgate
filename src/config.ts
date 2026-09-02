@@ -44,6 +44,15 @@ export interface TollgateConfig {
   merchants: MerchantRegistry;
   /** Default merchant id when query/header omitted (env DEFAULT_MERCHANT, default `demo`). */
   defaultMerchant: string;
+  /**
+   * When true, gated paths require an explicit `?merchant=` / `x-merchant-id`
+   * (no DEFAULT_MERCHANT fallback). Off by default — agents SHOULD send merchant id.
+   */
+  requireMerchant: boolean;
+  /** Gateway PAYMENT-SIGNATURE dedupe TTL (ms). CDP facilitator remains source of truth for EIP-3009 nonce. */
+  paymentDedupeTtlMs: number;
+  /** Max fingerprints kept in the in-memory dedupe LRU. */
+  paymentDedupeMaxEntries: number;
 }
 
 const DEFAULT_NETWORK_BY_ENV: Record<X402Environment, string> = {
@@ -107,6 +116,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig
     env.WAITLIST_EMAIL?.trim() || // legacy alias
     "2767111713@qq.com";
 
+  const requireMerchant = env.REQUIRE_MERCHANT?.trim().toLowerCase() === "true";
+
+  const dedupeTtlRaw = Number(env.PAYMENT_DEDUPE_TTL_MS);
+  const paymentDedupeTtlMs =
+    Number.isFinite(dedupeTtlRaw) && dedupeTtlRaw >= 1_000
+      ? Math.floor(dedupeTtlRaw)
+      : 10 * 60 * 1000;
+
+  const dedupeMaxRaw = Number(env.PAYMENT_DEDUPE_MAX_ENTRIES);
+  const paymentDedupeMaxEntries =
+    Number.isFinite(dedupeMaxRaw) && dedupeMaxRaw >= 100
+      ? Math.floor(dedupeMaxRaw)
+      : 10_000;
+
   return {
     port,
     upstreamUrl: env.UPSTREAM_URL?.trim() || undefined,
@@ -124,6 +147,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig
     feeCollector,
     merchants,
     defaultMerchant,
+    requireMerchant,
+    paymentDedupeTtlMs,
+    paymentDedupeMaxEntries,
   };
 }
 

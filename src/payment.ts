@@ -14,10 +14,15 @@ import {
 } from "./bazaar.js";
 import { paymentRequiredJsonBody } from "./payment-required-body.js";
 import {
+  merchantIdFromRequest,
   resolveMerchant,
   rewritePaymentRequiredPayTo,
   type MerchantEntry,
 } from "./merchants.js";
+import {
+  SignatureDedupeCache,
+  withPaymentSignatureDedupe,
+} from "./payment-dedupe.js";
 
 /** Base Sepolia / Base mainnet default USDC (from @x402/evm defaults). */
 const DEFAULT_USDC: Record<string, { asset: string; decimals: number }> = {
@@ -130,6 +135,9 @@ export function buildPublicResourceUrl(
 /**
  * On gated paths: resolve merchant (query `merchant` / header `x-merchant-id` /
  * DEFAULT_MERCHANT). Unknown → 400 `{error:"unknown_merchant"}`. Free paths pass through.
+ *
+ * When `REQUIRE_MERCHANT=true`, omitting merchant id → 400 `{error:"merchant_required"}`
+ * (no silent fallback to demo).
  */
 export function withMerchantGate(
   middleware: RequestHandler,
@@ -138,6 +146,14 @@ export function withMerchantGate(
   return (req, res, next) => {
     if (isFreePath(req.path) || !isGatedPath(req.path, config.gatedPrefix)) {
       return middleware(req, res, next);
+    }
+
+    if (config.requireMerchant) {
+      const explicit = merchantIdFromRequest(req, "");
+      if (!explicit) {
+        res.status(400).json({ error: "merchant_required" });
+        return;
+      }
     }
 
     const resolved = resolveMerchant(req, config.merchants, config.defaultMerchant);
@@ -244,9 +260,21 @@ function withReadable402Body(
 function wrapPaymentMiddleware(
   raw: RequestHandler,
   config: TollgateConfig,
+  dedupeCache?: SignatureDedupeCache,
 ): RequestHandler {
+  // Order: merchant gate → signature replay check → readable 402 / public URL → settle.
+  // After successful settle (next()), dedupe records the PAYMENT-SIGNATURE fingerprint.
+  // CDP facilitator EIP-3009 nonce remains the on-chain source of truth; this is short-TTL defense-in-depth.
   return withMerchantGate(
-    withReadable402Body(withPublicResourceUrl(raw, config), config),
+    withPaymentSignatureDedupe(
+      withReadable402Body(withPublicResourceUrl(raw, config), config),
+      {
+        cache: dedupeCache,
+        ttlMs: config.paymentDedupeTtlMs,
+        maxEntries: config.paymentDedupeMaxEntries,
+        gatedPrefix: config.gatedPrefix,
+      },
+    ),
     config,
   );
 }
@@ -278,7 +306,10 @@ export async function createLivePaymentLayer(config: TollgateConfig): Promise<Pa
   );
 
   return {
-    middleware: wrapPaymentMiddleware(raw, config),
+    middleware: wrapPaymentMiddleware(raw, config, new SignatureDedupeCache({
+      ttlMs: config.paymentDedupeTtlMs,
+      maxEntries: config.paymentDedupeMaxEntries,
+    })),
     mode: "live",
     payToEvmAddress: server.payToEvmAddress,
   };
@@ -391,7 +422,14 @@ export function createDemoPaymentLayer(config: TollgateConfig): PaymentLayer {
   };
 
   return {
-    middleware: wrapPaymentMiddleware(middleware, config),
+    middleware: wrapPaymentMiddleware(
+      middleware,
+      config,
+      new SignatureDedupeCache({
+        ttlMs: config.paymentDedupeTtlMs,
+        maxEntries: config.paymentDedupeMaxEntries,
+      }),
+    ),
     mode: "demo",
     payToEvmAddress: fallbackPayTo,
   };

@@ -190,6 +190,30 @@ describe("gateway HTTP", () => {
     assert.equal(merchants.status, 200);
   });
 
+  it("REQUIRE_MERCHANT=true rejects gated calls without merchant id", async () => {
+    const config = loadConfig({
+      GATED_PREFIX: "/v1",
+      REQUIRE_MERCHANT: "true",
+      MERCHANTS_JSON: merchantsJson({
+        demo: { seller: TEST_SELLER, payTo: TEST_SPLITTER, label: "demo" },
+        acme: { seller: OTHER_SELLER, payTo: OTHER_SPLITTER, label: "Acme" },
+      }),
+    });
+    assert.equal(config.requireMerchant, true);
+    const { app } = await createApp({
+      config,
+      paymentLayer: createDemoPaymentLayer(config),
+      disableMcp: true,
+    });
+
+    const missing = await request(app).get("/v1/quote");
+    assert.equal(missing.status, 400);
+    assert.deepEqual(missing.body, { error: "merchant_required" });
+
+    const ok = await request(app).get("/v1/quote").query({ merchant: "acme" });
+    assert.equal(ok.status, 402);
+  });
+
   it("unpaid GET /v1/fetch-md returns 402 with readable JSON body", async () => {
     const config = loadConfig({
       X402_PAY_TO: TEST_SELLER,
@@ -246,7 +270,7 @@ describe("gateway HTTP", () => {
     assert.ok(res.headers["payment-required"]);
   });
 
-  it("demo settled payment reaches mock upstream without double-charge on retry", async () => {
+  it("demo settled payment succeeds once; replaying PAYMENT-SIGNATURE is rejected", async () => {
     const config = loadConfig({
       X402_PAY_TO: TEST_SELLER,
     });
@@ -262,11 +286,19 @@ describe("gateway HTTP", () => {
     assert.equal(first.body.source, "x402-micro-tollgate-mock");
     assert.ok(first.headers["payment-response"]);
 
-    const retry = await request(app)
+    const replay = await request(app)
       .get("/v1/quote")
       .set("PAYMENT-SIGNATURE", "demo-settled");
-    assert.equal(retry.status, 200);
-    assert.equal(retry.body.symbol, "ETH-USD");
+    assert.equal(replay.status, 400);
+    assert.deepEqual(replay.body, { error: "payment_replay" });
+
+    // A distinct settled signature still works (demo accepts x-demo-payment).
+    const second = await request(app)
+      .get("/v1/quote")
+      .set("x-demo-payment", "settled")
+      .set("PAYMENT-SIGNATURE", "demo-settled-other");
+    assert.equal(second.status, 200);
+    assert.equal(second.body.symbol, "ETH-USD");
   });
 
   it("non-gated path outside prefix is not charged when prefix is /v1", async () => {
@@ -431,24 +463,26 @@ describe("GET /v1/fetch-md paid demo", () => {
       disableMcp: true,
     });
 
+    // Use x-demo-payment without a shared PAYMENT-SIGNATURE so dedupe does not
+    // block successive negative cases on the same app instance.
     const local = await request(app)
       .get("/v1/fetch-md")
       .query({ url: "http://127.0.0.1/" })
-      .set("PAYMENT-SIGNATURE", "demo-settled");
+      .set("x-demo-payment", "settled");
     assert.equal(local.status, 400);
     assert.equal(local.body.error.code, "ssrf_blocked");
 
     const privateIp = await request(app)
       .get("/v1/fetch-md")
       .query({ url: "http://192.168.1.10/secret" })
-      .set("PAYMENT-SIGNATURE", "demo-settled");
+      .set("x-demo-payment", "settled");
     assert.equal(privateIp.status, 400);
     assert.equal(privateIp.body.error.code, "ssrf_blocked");
 
     const fileScheme = await request(app)
       .get("/v1/fetch-md")
       .query({ url: "file:///etc/passwd" })
-      .set("PAYMENT-SIGNATURE", "demo-settled");
+      .set("x-demo-payment", "settled");
     assert.equal(fileScheme.status, 400);
     assert.equal(fileScheme.body.error.code, "invalid_scheme");
   });
