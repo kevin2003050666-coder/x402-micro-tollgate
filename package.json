@@ -12,6 +12,7 @@
     "dist",
     "public",
     "server.json",
+    "merchants.example.json",
     "LICENSE",
     "README.md"
   ],

@@ -44,7 +44,7 @@ For dry-runs only — not required for production readiness:
 - **ERC-20 EVM only.** This contract assumes a standard ERC-20 `balanceOf` / `transfer` surface (Circle native USDC on EVM).
 - **Solana, BNB Chain, and non-USDC assets** need separate adapters / work — out of scope here.
 - **EIP-3009 settle still only credits `payTo`.** Settlement does not invoke splitter logic; operators must call `release()` later.
-- Do **not** hardcode `feeCollector` or private keys. Do **not** force the live gateway `X402_PAY_TO` to a splitter from this repo.
+- Do **not** commit private keys. For this product, operator **`feeCollector`** is fixed at `0xa922F38041B5ee227c96A547F106F1330447e30E` (see root README merchant registry). Do **not** force the live gateway `X402_PAY_TO` to a single splitter from this repo — use the merchant registry instead.
 
 ## Deploy (Remix) — operator steps
 
@@ -55,10 +55,10 @@ For dry-runs only — not required for production readiness:
    - `feeCollector_` — operator fee wallet
    - `asset_` — that chain’s native USDC from the matrix
    - `feeBps_` — `10`
-4. Set gateway env `X402_PAY_TO=<FeeSplitter address>` and `NETWORK` to the matching CAIP-2 (operator choice — not forced by this skeleton).
-5. Optionally set `FEE_BPS=10` and `FEE_COLLECTOR=<same operator wallet>` on the node for documentation / ops clarity. While `X402_PAY_TO` remains an EOA, the node still pays **100%** to that EOA (no fee take).
+4. Register the splitter in the gateway merchant registry (`MERCHANTS_JSON` / `merchants.json`) as that merchant’s `payTo`. Optionally set `X402_PAY_TO` to the default merchant splitter for CDP SDK init (global); per-request `payTo` is rewritten from the registry. Set `NETWORK` to the matching CAIP-2.
+5. Optionally set `FEE_BPS=10` and leave `FEE_COLLECTOR` unset (defaults to the fixed operator `0xa922…7e30E`) for ops clarity. While `X402_PAY_TO` remains an EOA, the node still pays **100%** to that EOA (no fee take) unless the registry advertises a splitter.
 6. After payments accumulate on the splitter, anyone can call `release()`.
 
 ## Gateway note
 
-`FEE_BPS` / `FEE_COLLECTOR` are compile-safe config knobs documented in the root README. They do **not** change the CDP live settle path by themselves — wiring `X402_PAY_TO` to a deployed splitter is the operator switch.
+`FEE_BPS` / `FEE_COLLECTOR` are compile-safe config knobs documented in the root README. Operator `FEE_COLLECTOR` defaults to the fixed Plan A address. They do **not** change the CDP live settle path by themselves — register each merchant’s deployed splitter in `MERCHANTS_JSON` (and optionally set `X402_PAY_TO` for SDK init). Per-request `payTo` is rewritten from the registry.

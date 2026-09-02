@@ -9,6 +9,7 @@ import { loadConfig } from "../src/config.js";
 import {
   createDemoPaymentLayer,
   withPublicResourceUrl,
+  withMerchantGate,
   buildPublicResourceUrl,
 } from "../src/payment.js";
 import {
@@ -16,11 +17,27 @@ import {
   encodePaymentRequiredHeader,
 } from "@x402/core/http";
 import { paymentRequiredJsonBody } from "../src/payment-required-body.js";
+import {
+  BUILTIN_DEMO_MERCHANTS,
+  OPERATOR_FEE_COLLECTOR,
+} from "../src/merchants.js";
+
+const TEST_SELLER = "0x1234567890123456789012345678901234567890";
+const TEST_SPLITTER = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+const OTHER_SPLITTER = "0x9999999999999999999999999999999999999999";
+const OTHER_SELLER = "0x8888888888888888888888888888888888888888";
+const SDK_GLOBAL_PAYTO = "0x1111111111111111111111111111111111111111";
+
+function merchantsJson(
+  entries: Record<string, { seller: string; payTo: string; label: string }>,
+): string {
+  return JSON.stringify(entries);
+}
 
 describe("gateway HTTP", () => {
-  it("GET /health is free and returns 200", async () => {
+  it("GET /health is free and returns 200 with feeCollector + defaultMerchant", async () => {
     const config = loadConfig({
-      X402_PAY_TO: "0x1234567890123456789012345678901234567890",
+      X402_PAY_TO: TEST_SELLER,
     });
     const { app } = await createApp({
       config,
@@ -31,7 +48,33 @@ describe("gateway HTTP", () => {
     assert.equal(res.status, 200);
     assert.equal(res.body.status, "ok");
     assert.equal(res.body.service, "x402-micro-tollgate");
+    assert.equal(res.body.feeCollector, OPERATOR_FEE_COLLECTOR);
+    assert.equal(res.body.defaultMerchant, "demo");
     assert.ok(res.headers["x-request-id"]);
+  });
+
+  it("GET /merchants returns demo entry free", async () => {
+    const config = loadConfig({});
+    const { app } = await createApp({
+      config,
+      paymentLayer: createDemoPaymentLayer(config),
+      disableMcp: true,
+    });
+
+    const res = await request(app).get("/merchants");
+    assert.equal(res.status, 200);
+    assert.equal(res.body.feeCollector, OPERATOR_FEE_COLLECTOR);
+    assert.equal(res.body.defaultMerchant, "demo");
+    assert.ok(Array.isArray(res.body.merchants));
+    const demo = res.body.merchants.find((m: { id: string }) => m.id === "demo");
+    assert.ok(demo);
+    assert.equal(demo.seller, BUILTIN_DEMO_MERCHANTS.demo.seller);
+    assert.equal(demo.payTo, BUILTIN_DEMO_MERCHANTS.demo.payTo);
+    assert.equal(demo.label, BUILTIN_DEMO_MERCHANTS.demo.label);
+
+    const underV1 = await request(app).get("/v1/merchants");
+    assert.equal(underV1.status, 200);
+    assert.ok(Array.isArray(underV1.body.merchants));
   });
 
   it("GET / landing is free HTML", async () => {
@@ -71,13 +114,16 @@ describe("gateway HTTP", () => {
     assert.match(res.text, /官方 SDK/);
   });
 
-  it("unpaid gated route returns 402 with PAYMENT-REQUIRED", async () => {
+  it("unpaid gated route returns 402 with default merchant payTo", async () => {
     const config = loadConfig({
-      X402_PAY_TO: "0x1234567890123456789012345678901234567890",
+      X402_PAY_TO: TEST_SELLER,
       PRICE: "$0.001",
       NETWORK: "eip155:84532",
       GATED_PREFIX: "/v1",
       PUBLIC_BASE_URL: "https://tollgate.example.com",
+      MERCHANTS_JSON: merchantsJson({
+        demo: { seller: TEST_SELLER, payTo: TEST_SPLITTER, label: "demo" },
+      }),
     });
     const { app } = await createApp({
       config,
@@ -97,7 +143,7 @@ describe("gateway HTTP", () => {
     assert.equal(required.x402Version, 2);
     assert.ok(Array.isArray(required.accepts));
     assert.equal(required.accepts[0]?.network, "eip155:84532");
-    assert.equal(required.accepts[0]?.payTo, "0x1234567890123456789012345678901234567890");
+    assert.equal(required.accepts[0]?.payTo, TEST_SPLITTER);
     assert.equal(required.accepts[0]?.scheme, "exact");
     assert.equal(required.accepts[0]?.amount, "1000");
     assert.equal(required.resource?.url, "https://tollgate.example.com/v1/quote");
@@ -106,12 +152,53 @@ describe("gateway HTTP", () => {
     assert.equal(bazaar.discoverable, true);
   });
 
+  it("resolves merchant from query and header; unknown merchant → 400", async () => {
+    const config = loadConfig({
+      GATED_PREFIX: "/v1",
+      PUBLIC_BASE_URL: "https://tollgate.example.com",
+      MERCHANTS_JSON: merchantsJson({
+        demo: { seller: TEST_SELLER, payTo: TEST_SPLITTER, label: "demo" },
+        acme: { seller: OTHER_SELLER, payTo: OTHER_SPLITTER, label: "Acme" },
+      }),
+    });
+    const { app } = await createApp({
+      config,
+      paymentLayer: createDemoPaymentLayer(config),
+      disableMcp: true,
+    });
+
+    const byQuery = await request(app).get("/v1/quote").query({ merchant: "acme" });
+    assert.equal(byQuery.status, 402);
+    const qRequired = decodePaymentRequiredHeader(byQuery.headers["payment-required"] as string);
+    assert.equal(qRequired.accepts[0]?.payTo, OTHER_SPLITTER);
+
+    const byHeader = await request(app).get("/v1/quote").set("x-merchant-id", "acme");
+    assert.equal(byHeader.status, 402);
+    const hRequired = decodePaymentRequiredHeader(byHeader.headers["payment-required"] as string);
+    assert.equal(hRequired.accepts[0]?.payTo, OTHER_SPLITTER);
+
+    const unknown = await request(app).get("/v1/quote").query({ merchant: "nope" });
+    assert.equal(unknown.status, 400);
+    assert.deepEqual(unknown.body, { error: "unknown_merchant" });
+
+    // Free paths must not break on unknown merchant
+    const health = await request(app).get("/health").query({ merchant: "nope" });
+    assert.equal(health.status, 200);
+    const root = await request(app).get("/").query({ merchant: "nope" });
+    assert.equal(root.status, 200);
+    const merchants = await request(app).get("/merchants").query({ merchant: "nope" });
+    assert.equal(merchants.status, 200);
+  });
+
   it("unpaid GET /v1/fetch-md returns 402 with readable JSON body", async () => {
     const config = loadConfig({
-      X402_PAY_TO: "0x1234567890123456789012345678901234567890",
+      X402_PAY_TO: TEST_SELLER,
       PRICE: "$0.002",
       GATED_PREFIX: "/v1",
       PUBLIC_BASE_URL: "https://tollgate.example.com",
+      MERCHANTS_JSON: merchantsJson({
+        demo: { seller: TEST_SELLER, payTo: TEST_SPLITTER, label: "demo" },
+      }),
     });
     const { app } = await createApp({
       config,
@@ -135,11 +222,15 @@ describe("gateway HTTP", () => {
       required.resource?.url,
       "https://tollgate.example.com/v1/fetch-md?url=https%3A%2F%2Fexample.com",
     );
+    assert.equal(required.accepts[0]?.payTo, TEST_SPLITTER);
   });
 
   it("empty JSON body probe on gated route returns 402 not 400", async () => {
     const config = loadConfig({
-      X402_PAY_TO: "0x1234567890123456789012345678901234567890",
+      X402_PAY_TO: TEST_SELLER,
+      MERCHANTS_JSON: merchantsJson({
+        demo: { seller: TEST_SELLER, payTo: TEST_SPLITTER, label: "demo" },
+      }),
     });
     const { app } = await createApp({
       config,
@@ -157,7 +248,7 @@ describe("gateway HTTP", () => {
 
   it("demo settled payment reaches mock upstream without double-charge on retry", async () => {
     const config = loadConfig({
-      X402_PAY_TO: "0x1234567890123456789012345678901234567890",
+      X402_PAY_TO: TEST_SELLER,
     });
     const { app } = await createApp({
       config,
@@ -237,7 +328,7 @@ describe("proxy wiring to real upstream", () => {
     hits = 0;
     const config = loadConfig({
       UPSTREAM_URL: upstreamUrl,
-      X402_PAY_TO: "0x1234567890123456789012345678901234567890",
+      X402_PAY_TO: TEST_SELLER,
       GATED_PREFIX: "/v1",
     });
     const { app } = await createApp({
@@ -264,7 +355,7 @@ describe("proxy wiring to real upstream", () => {
     hits = 0;
     const config = loadConfig({
       UPSTREAM_URL: upstreamUrl,
-      X402_PAY_TO: "0x1234567890123456789012345678901234567890",
+      X402_PAY_TO: TEST_SELLER,
     });
     const { app } = await createApp({
       config,
@@ -304,7 +395,7 @@ describe("GET /v1/fetch-md paid demo", () => {
 
   it("demo-settled fetch of local HTML fixture returns markdown", async () => {
     const config = loadConfig({
-      X402_PAY_TO: "0x1234567890123456789012345678901234567890",
+      X402_PAY_TO: TEST_SELLER,
     });
     const { createFetchMdHandler } = await import("../src/fetch-md.js");
     const { app } = await createApp({
@@ -332,7 +423,7 @@ describe("GET /v1/fetch-md paid demo", () => {
 
   it("rejects localhost and private URLs after payment", async () => {
     const config = loadConfig({
-      X402_PAY_TO: "0x1234567890123456789012345678901234567890",
+      X402_PAY_TO: TEST_SELLER,
     });
     const { app } = await createApp({
       config,
@@ -379,8 +470,9 @@ describe("live PAYMENT-REQUIRED resource.url behind TLS proxy", () => {
   /**
    * Mimics @x402/express ExpressAdapter.getUrl():
    * `${req.protocol}://${host}${originalUrl}` — without trust proxy this is http://.
+   * Global SDK payTo differs from per-merchant FeeSplitter payTo.
    */
-  function sdkStyle402Middleware(): RequestHandler {
+  function sdkStyle402Middleware(globalPayTo: `0x${string}` = SDK_GLOBAL_PAYTO): RequestHandler {
     return (req, res) => {
       const sdkUrl = `${req.protocol}://${req.headers.host}${req.originalUrl}`;
       const paymentRequired = {
@@ -397,8 +489,9 @@ describe("live PAYMENT-REQUIRED resource.url behind TLS proxy", () => {
             network: "eip155:8453" as `${string}:${string}`,
             amount: "1000",
             asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-            payTo: "0x1234567890123456789012345678901234567890" as `0x${string}`,
+            payTo: globalPayTo,
             maxTimeoutSeconds: 300,
+            recipient: globalPayTo,
           },
         ],
       };
@@ -416,7 +509,7 @@ describe("live PAYMENT-REQUIRED resource.url behind TLS proxy", () => {
 
   it("rewrites proxied http resource.url to PUBLIC_BASE_URL https + query", async () => {
     const config = loadConfig({
-      X402_PAY_TO: "0x1234567890123456789012345678901234567890",
+      X402_PAY_TO: TEST_SELLER,
       PUBLIC_BASE_URL: "https://example-host",
       GATED_PREFIX: "/v1",
     });
@@ -452,7 +545,54 @@ describe("live PAYMENT-REQUIRED resource.url behind TLS proxy", () => {
       url,
       "https://example-host/v1/fetch-md?url=https%3A%2F%2Fexample.com",
     );
-    assert.equal(url, buildPublicResourceUrl(config, { originalUrl: "/v1/fetch-md?url=https%3A%2F%2Fexample.com" }));
+    assert.equal(
+      url,
+      buildPublicResourceUrl(config, {
+        originalUrl: "/v1/fetch-md?url=https%3A%2F%2Fexample.com",
+      }),
+    );
+    // Without merchant gate, SDK global payTo is left unchanged.
+    assert.equal(required.accepts[0]?.payTo, SDK_GLOBAL_PAYTO);
+  });
+
+  it("rewrites PAYMENT-REQUIRED payTo to resolved merchant FeeSplitter", async () => {
+    const config = loadConfig({
+      X402_PAY_TO: SDK_GLOBAL_PAYTO,
+      PUBLIC_BASE_URL: "https://example-host",
+      GATED_PREFIX: "/v1",
+      MERCHANTS_JSON: merchantsJson({
+        demo: { seller: TEST_SELLER, payTo: TEST_SPLITTER, label: "demo" },
+        acme: { seller: OTHER_SELLER, payTo: OTHER_SPLITTER, label: "Acme" },
+      }),
+    });
+
+    const raw = sdkStyle402Middleware(SDK_GLOBAL_PAYTO);
+    const { app } = await createApp({
+      config,
+      paymentLayer: {
+        mode: "live",
+        payToEvmAddress: config.payTo,
+        middleware: withMerchantGate(withPublicResourceUrl(raw, config), config),
+      },
+      disableMcp: true,
+    });
+
+    const res = await request(app)
+      .get("/v1/quote")
+      .query({ merchant: "acme" })
+      .set("X-Forwarded-Proto", "https")
+      .set("Host", "example-host");
+
+    assert.equal(res.status, 402);
+    const required = decodePaymentRequiredHeader(
+      res.headers["payment-required"] as string,
+    );
+    assert.equal(required.resource?.url, "https://example-host/v1/quote?merchant=acme");
+    assert.equal(required.accepts[0]?.payTo, OTHER_SPLITTER);
+    assert.equal(
+      (required.accepts[0] as { recipient?: string } | undefined)?.recipient,
+      OTHER_SPLITTER,
+    );
   });
 
   it("enables trust proxy when PUBLIC_BASE_URL is https", async () => {

@@ -11,6 +11,7 @@ import { createFetchMdHandler } from "./fetch-md.js";
 import { mountMcpTransports } from "./mcp/http.js";
 import type { McpPaymentLayer } from "./mcp/payment.js";
 import { resolvePublicDir } from "./static.js";
+import { listMerchantsPublic } from "./merchants.js";
 
 export interface AppOptions {
   config?: TollgateConfig;
@@ -77,12 +78,25 @@ export async function createApp(options: AppOptions = {}): Promise<CreatedApp> {
       upstream: config.upstreamUrl ?? "mock",
       payTo: payment.payToEvmAddress ?? null,
       publicBaseUrl: config.publicBaseUrl,
+      feeCollector: config.feeCollector,
+      defaultMerchant: config.defaultMerchant,
       mcp: {
         streamableHttp: "/mcp",
         sse: "/sse",
       },
     });
   });
+
+  // Free merchant registry listing (no secrets). Also served at /v1/merchants via FREE_PATHS.
+  const sendMerchants = (_req: Request, res: Response) => {
+    res.status(200).json({
+      feeCollector: config.feeCollector,
+      defaultMerchant: config.defaultMerchant,
+      merchants: listMerchantsPublic(config.merchants),
+    });
+  };
+  app.get("/merchants", sendMerchants);
+  app.get("/v1/merchants", sendMerchants);
 
   // Developer landing (free). Inject contact email; /zh prefers Chinese via client script.
   const sendLanding = (_req: Request, res: Response) => {
