@@ -92,7 +92,7 @@ Uses [`render.yaml`](./render.yaml): Node 22, `npm start`, health `/health`, env
 | `FEE_BPS` | `10` | Documented operator fee (0.1%). Live settle still pays 100% to `X402_PAY_TO` until you deploy a splitter |
 | `FEE_COLLECTOR` | — | Operator wallet for the 0.1% slice after `FeeSplitter.release()` (do not hardcode) |
 
-If `X402_PAY_TO` is still an EOA, behavior is unchanged (100% to seller). Pointing `X402_PAY_TO` at a deployed [`FeeSplitter`](./contracts/README.md) is an operator choice — x402/`exact` on Base credits the splitter via EIP-3009; call `release()` later to send 99.9% / 0.1%.
+If `X402_PAY_TO` is still an EOA, behavior is unchanged (100% to seller). Pointing `X402_PAY_TO` at a deployed [`FeeSplitter`](./contracts/README.md) is an operator choice — x402/`exact` credits the splitter via EIP-3009; call `release()` later to send 99.9% / 0.1%. The same contract deploys on **Base / Arbitrum / Polygon** with per-chain native USDC as `asset` — see the [multi-chain FeeSplitter matrix](./contracts/README.md#multi-chain-usdc-matrix-production) (fee stays **0.1%** / 10 bps).
 
 ---
 
