@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>x402-micro-tollgate — Make any API pay-per-call for agents</title>
-  <meta name="description" content="Self-hosted HTTP 402 + MCP paywall. Security backed by Coinbase CDP. Monetize your API to agents via x402 USDC payments — protocol/toll fee, not monthly hosting." />
+  <title>x402-micro-tollgate — Visa tollbooth for AI agents</title>
+  <meta name="description" content="Second-scale settlement bridge for AI agents that can't hold cards. Charge per API call in USDC; protocol take 0.1%. Trusted clearing via Coinbase CDP on Base." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@600;700;800&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -107,27 +107,27 @@
     /* Hero — one composition */
     .hero {
       padding: 18vh 0 12vh;
-      max-width: 44rem;
+      max-width: 46rem;
       animation: rise 0.85s 0.08s ease both;
     }
     .hero h1 {
       font-family: var(--font-display);
       font-weight: 800;
-      font-size: clamp(2.4rem, 6vw, 3.75rem);
-      line-height: 1.05;
+      font-size: clamp(2.2rem, 5.5vw, 3.5rem);
+      line-height: 1.08;
       letter-spacing: -0.035em;
       margin: 0.85rem 0 1.1rem;
     }
     .hero .lead {
       font-size: 1.15rem;
       color: var(--muted);
-      max-width: 36rem;
+      max-width: 38rem;
       margin-bottom: 1rem;
     }
     .hero .trust {
       font-size: 0.98rem;
       color: var(--ink);
-      max-width: 38rem;
+      max-width: 40rem;
       margin-bottom: 1.75rem;
       padding-left: 0.85rem;
       border-left: 2px solid var(--accent);
@@ -177,7 +177,7 @@
     }
     section p.sub {
       color: var(--muted);
-      max-width: 36rem;
+      max-width: 38rem;
       margin-bottom: 1.5rem;
     }
 
@@ -187,6 +187,7 @@
     }
     @media (min-width: 760px) {
       .split-2 { grid-template-columns: 1fr 1fr; }
+      .split-3 { grid-template-columns: 1fr 1fr 1fr; }
     }
 
     .panel {
@@ -200,6 +201,22 @@
       margin-bottom: 0.4rem;
     }
     .panel p { color: var(--muted); font-size: 0.98rem; }
+    .panel .step-n {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--accent);
+      letter-spacing: 0.04em;
+      margin-bottom: 0.55rem;
+    }
+
+    .toll {
+      font-family: var(--font-display);
+      font-weight: 800;
+      font-size: clamp(2rem, 4vw, 2.75rem);
+      letter-spacing: -0.03em;
+      color: var(--accent);
+      margin: 0.35rem 0 0.75rem;
+    }
 
     pre, code {
       font-family: var(--font-mono);
@@ -248,8 +265,7 @@
     footer a { color: var(--accent); text-decoration: none; }
     footer a:hover { text-decoration: underline; }
 
-    [data-i18n] { }
-    html[lang="zh"] .hero h1 { font-size: clamp(2.1rem, 5.5vw, 3.2rem); letter-spacing: -0.02em; }
+    html[lang="zh"] .hero h1 { font-size: clamp(1.95rem, 5vw, 3rem); letter-spacing: -0.02em; }
 
     @keyframes rise {
       from { opacity: 0; transform: translateY(14px); }
@@ -279,49 +295,78 @@
     <main>
       <section class="hero" style="border:0;padding-top:18vh;padding-bottom:12vh">
         <p class="brand" style="color:var(--accent);font-size:0.95rem" data-i18n="eyebrow">x402-micro-tollgate</p>
-        <h1 data-i18n="headline">Make any API pay-per-call for agents in 5 minutes</h1>
-        <p class="lead" data-i18n="lead">HTTP 402 + MCP tools. Humans can still hit a free path; agents pay USDC via x402. Sell shovels before the A2A rush.</p>
-        <p class="trust" data-i18n="trust">Security backed by Coinbase CDP. We don't touch your keys or settle payments on custom cryptography — signatures and replay protection are powered natively by Coinbase's official SDK.</p>
+        <h1 data-i18n="headline">Visa for AI agents that can’t hold a card</h1>
+        <p class="lead" data-i18n="lead">A second-scale settlement bridge for agent traffic — the Web3 tollbooth that clears USDC micropayments and takes 0.1%.</p>
+        <p class="trust" data-i18n="trust">Trusted clearing via Coinbase CDP on Base. You keep the API; agents pay per call in USDC — no card rails, no monthly seat licenses.</p>
         <div class="cta-row">
-          <a class="btn btn-primary" href="#self-host" data-i18n="cta_self">Self-host free</a>
-          <a class="btn btn-ghost" href="https://github.com/kevin2003050666-coder/x402-micro-tollgate" data-i18n="cta_github">GitHub</a>
+          <a class="btn btn-primary" href="#how" data-i18n="cta_demo">See how it works</a>
+          <a class="btn btn-ghost" href="#self-host" data-i18n="cta_docs">Try the demo</a>
+          <a class="btn btn-ghost" href="https://github.com/kevin2003050666-coder/x402-micro-tollgate" data-i18n="cta_github">Docs on GitHub</a>
         </div>
       </section>
 
-      <section id="log-conversion">
-        <h2 data-i18n="conv_title">Log conversion (HTTP 402)</h2>
-        <p class="sub" data-i18n="conv_body">Free traffic hits a gated route and gets HTTP 402 Payment Required—not a hard deny, a price tag. Agents (or wallets) settle a small USDC micropayment, retry with a payment signature, and the tollgate unlocks the upstream response. The same loop works for MCP tools: discover → 402 → pay → unlock. No API keys, no monthly billing SaaS—conversion is the protocol.</p>
+      <section id="problem">
+        <h2 data-i18n="problem_title">The problem</h2>
+        <p class="sub" data-i18n="problem_body">Millions of AI agents will call paid APIs. They don’t have credit cards or SaaS seats. Merchants still need a way to charge per call — without building a billing console or locking revenue behind monthly plans.</p>
+      </section>
+
+      <section id="how">
+        <h2 data-i18n="how_title">How it works</h2>
+        <p class="sub" data-i18n="how_sub">Three steps. Business words only.</p>
+        <div class="split split-3">
+          <div class="panel">
+            <p class="step-n" data-i18n="step1_n">01 · Price tag</p>
+            <h3 data-i18n="step1_title">Show the price</h3>
+            <p data-i18n="step1_body">An agent hits your API and gets HTTP 402 — not a hard deny, a machine-readable price tag for the call.</p>
+          </div>
+          <div class="panel">
+            <p class="step-n" data-i18n="step2_n">02 · Pay</p>
+            <h3 data-i18n="step2_title">Settle in seconds</h3>
+            <p data-i18n="step2_body">The agent pays a tiny USDC amount. Clearing runs on trusted Coinbase CDP rails — second-scale, not overnight batch.</p>
+          </div>
+          <div class="panel">
+            <p class="step-n" data-i18n="step3_n">03 · Unlock</p>
+            <h3 data-i18n="step3_title">Deliver the goods</h3>
+            <p data-i18n="step3_body">The tollgate unlocks and proxies to your upstream. Same loop for HTTP APIs and MCP tools in Cursor / Claude.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="money">
+        <h2 data-i18n="money_title">How money works</h2>
+        <p class="toll" data-i18n="money_rate">0.1% toll</p>
+        <p class="sub" data-i18n="money_body">Like Visa interchange for agent traffic: you keep ~99.9% of every settled call; the protocol takes 0.1%. Self-host is free (MIT) — monetization is the take rate, not a hosted SaaS plan.</p>
+      </section>
+
+      <section id="who">
+        <h2 data-i18n="who_title">Who it’s for</h2>
+        <div class="split split-2">
+          <div class="panel">
+            <h3 data-i18n="who_api">API sellers</h3>
+            <p data-i18n="who_api_body">Turn any upstream into pay-per-call for agents. Humans can still use a free path; agents convert at the tollbooth.</p>
+          </div>
+          <div class="panel">
+            <h3 data-i18n="who_mcp">Tool builders</h3>
+            <p data-i18n="who_mcp_body">Ship paid MCP tools agents can discover and call. npm one-liner to run; drop into Cursor when you’re ready.</p>
+          </div>
+        </div>
       </section>
 
       <section id="self-host">
-        <h2 data-i18n="self_title">Self-host (open source)</h2>
-        <p class="sub" data-i18n="self_sub">MIT. One process: HTTP gateway + Streamable HTTP MCP. Point it at your upstream API.</p>
+        <h2 data-i18n="self_title">Try the demo (self-host)</h2>
+        <p class="sub" data-i18n="self_sub">MIT open source. One process: HTTP tollgate + MCP. Point it at your API and open the gate.</p>
         <div class="copy-wrap">
           <button class="copy-btn" type="button" data-copy="#cmd-self">Copy</button>
           <pre id="cmd-self">npx x402-micro-tollgate
 # or
 docker compose up</pre>
         </div>
-        <p class="sub" style="margin-top:1rem" data-i18n="self_env">Set three env vars for live settlement: <code>CDP_API_KEY_ID</code>, <code>CDP_API_KEY_SECRET</code>, <code>X402_PAY_TO</code>. Optional: <code>UPSTREAM_URL</code>, <code>PRICE</code>.</p>
-      </section>
-
-      <section id="paths">
-        <h2 data-i18n="paths_title">What you get</h2>
-        <div class="split split-2">
-          <div class="panel">
-            <h3 data-i18n="path_http">HTTP gateway</h3>
-            <p data-i18n="path_http_body">Gate <code>/v1/*</code> with x402. Unpaid → 402 + PAYMENT-REQUIRED. Paid → proxy to your API. <code>/health</code> stays free.</p>
-          </div>
-          <div class="panel">
-            <h3 data-i18n="path_mcp">MCP tools</h3>
-            <p data-i18n="path_mcp_body"><code>server_info</code> free. <code>get_quote</code> and <code>proxy_request</code> charge per call. Drop into Cursor / Claude Desktop.</p>
-          </div>
-        </div>
+        <p class="sub" style="margin-top:1rem" data-i18n="self_env">For live settlement set CDP_API_KEY_ID, CDP_API_KEY_SECRET, and X402_PAY_TO. Optional: UPSTREAM_URL, PRICE.</p>
       </section>
 
       <section id="cursor">
         <h2 data-i18n="cursor_title">Cursor config</h2>
-        <p class="sub" data-i18n="cursor_sub">After you expose the server (local or public), paste this into <code>mcp.json</code>.</p>
+        <p class="sub" data-i18n="cursor_sub">After you expose the server (local or public), paste this into mcp.json.</p>
         <div class="copy-wrap">
           <button class="copy-btn" type="button" data-copy="#cfg-cursor">Copy</button>
           <pre id="cfg-cursor">{
@@ -336,7 +381,7 @@ docker compose up</pre>
 
       <section id="contact">
         <h2 data-i18n="contact_title">Contact</h2>
-        <p class="sub" data-i18n="contact_sub">Self-hosted drop-in — no hosted SaaS plan. Questions about running your own node?</p>
+        <p class="sub" data-i18n="contact_sub">Self-hosted drop-in — no hosted SaaS waitlist. Questions about running your own tollbooth?</p>
         <p style="margin-top:1rem">
           <a class="btn btn-ghost" href="mailto:__CONTACT_EMAIL__?subject=x402-micro-tollgate" data-i18n="contact_cta">Email</a>
         </p>
@@ -344,14 +389,14 @@ docker compose up</pre>
 
       <section id="not">
         <h2 data-i18n="not_title">What this is not</h2>
-        <p class="not" data-i18n="not_body">Not a full A2A marketplace. Not a SaaS billing console. Not a custom chain facilitator. It’s a thin tollgate: charge agents for API / MCP calls with official x402 + CDP settle.</p>
+        <p class="not" data-i18n="not_body">Not a full agent marketplace. Not a SaaS billing console. Not a custom chain. A thin Visa-style tollbooth: price tag → pay → unlock, cleared through Coinbase CDP.</p>
       </section>
     </main>
 
     <footer>
       <div>
         <strong style="color:var(--ink)">x402-micro-tollgate</strong>
-        · MIT · x402 · Base
+        · MIT · USDC · Base
       </div>
       <div>
         <a href="/health">/health</a>
@@ -367,53 +412,83 @@ docker compose up</pre>
     const copy = {
       en: {
         eyebrow: "x402-micro-tollgate",
-        headline: "Make any API pay-per-call for agents in 5 minutes",
-        lead: "HTTP 402 + MCP tools. Humans can still hit a free path; agents pay USDC via x402. Sell shovels before the A2A rush.",
-        trust: "Security backed by Coinbase CDP. We don't touch your keys or settle payments on custom cryptography — signatures and replay protection are powered natively by Coinbase's official SDK.",
-        cta_self: "Self-host free",
-        cta_github: "GitHub",
-        conv_title: "Log conversion (HTTP 402)",
-        conv_body: "Free traffic hits a gated route and gets HTTP 402 Payment Required—not a hard deny, a price tag. Agents (or wallets) settle a small USDC micropayment, retry with a payment signature, and the tollgate unlocks the upstream response. The same loop works for MCP tools: discover → 402 → pay → unlock. No API keys, no monthly billing SaaS—conversion is the protocol.",
-        self_title: "Self-host (open source)",
-        self_sub: "MIT. One process: HTTP gateway + Streamable HTTP MCP. Point it at your upstream API.",
-        self_env: "Set three env vars for live settlement: CDP_API_KEY_ID, CDP_API_KEY_SECRET, X402_PAY_TO. Optional: UPSTREAM_URL, PRICE.",
-        paths_title: "What you get",
-        path_http: "HTTP gateway",
-        path_http_body: "Gate /v1/* with x402. Unpaid → 402 + PAYMENT-REQUIRED. Paid → proxy to your API. /health stays free.",
-        path_mcp: "MCP tools",
-        path_mcp_body: "server_info free. get_quote and proxy_request charge per call. Drop into Cursor / Claude Desktop.",
+        headline: "Visa for AI agents that can’t hold a card",
+        lead: "A second-scale settlement bridge for agent traffic — the Web3 tollbooth that clears USDC micropayments and takes 0.1%.",
+        trust: "Trusted clearing via Coinbase CDP on Base. You keep the API; agents pay per call in USDC — no card rails, no monthly seat licenses.",
+        cta_demo: "See how it works",
+        cta_docs: "Try the demo",
+        cta_github: "Docs on GitHub",
+        problem_title: "The problem",
+        problem_body: "Millions of AI agents will call paid APIs. They don’t have credit cards or SaaS seats. Merchants still need a way to charge per call — without building a billing console or locking revenue behind monthly plans.",
+        how_title: "How it works",
+        how_sub: "Three steps. Business words only.",
+        step1_n: "01 · Price tag",
+        step1_title: "Show the price",
+        step1_body: "An agent hits your API and gets HTTP 402 — not a hard deny, a machine-readable price tag for the call.",
+        step2_n: "02 · Pay",
+        step2_title: "Settle in seconds",
+        step2_body: "The agent pays a tiny USDC amount. Clearing runs on trusted Coinbase CDP rails — second-scale, not overnight batch.",
+        step3_n: "03 · Unlock",
+        step3_title: "Deliver the goods",
+        step3_body: "The tollgate unlocks and proxies to your upstream. Same loop for HTTP APIs and MCP tools in Cursor / Claude.",
+        money_title: "How money works",
+        money_rate: "0.1% toll",
+        money_body: "Like Visa interchange for agent traffic: you keep ~99.9% of every settled call; the protocol takes 0.1%. Self-host is free (MIT) — monetization is the take rate, not a hosted SaaS plan.",
+        who_title: "Who it’s for",
+        who_api: "API sellers",
+        who_api_body: "Turn any upstream into pay-per-call for agents. Humans can still use a free path; agents convert at the tollbooth.",
+        who_mcp: "Tool builders",
+        who_mcp_body: "Ship paid MCP tools agents can discover and call. npm one-liner to run; drop into Cursor when you’re ready.",
+        self_title: "Try the demo (self-host)",
+        self_sub: "MIT open source. One process: HTTP tollgate + MCP. Point it at your API and open the gate.",
+        self_env: "For live settlement set CDP_API_KEY_ID, CDP_API_KEY_SECRET, and X402_PAY_TO. Optional: UPSTREAM_URL, PRICE.",
         cursor_title: "Cursor config",
         cursor_sub: "After you expose the server (local or public), paste this into mcp.json.",
         contact_title: "Contact",
-        contact_sub: "Self-hosted drop-in — no hosted SaaS plan. Questions about running your own node?",
+        contact_sub: "Self-hosted drop-in — no hosted SaaS waitlist. Questions about running your own tollbooth?",
         contact_cta: "Email",
         not_title: "What this is not",
-        not_body: "Not a full A2A marketplace. Not a SaaS billing console. Not a custom chain facilitator. It’s a thin tollgate: charge agents for API / MCP calls with official x402 + CDP settle."
+        not_body: "Not a full agent marketplace. Not a SaaS billing console. Not a custom chain. A thin Visa-style tollbooth: price tag → pay → unlock, cleared through Coinbase CDP."
       },
       zh: {
         eyebrow: "x402-micro-tollgate",
-        headline: "5 分钟让任意 API 对 Agent 按次收费",
-        lead: "HTTP 402 + MCP 工具。人类仍可走免费路径；Agent 通过 x402 用 USDC 付款。在 A2A 爆发前先卖铲子。",
-        trust: "安全由 Coinbase CDP 提供支撑。我们不接触你的密钥，也不用自定义密码学结算——签名与防重放由 Coinbase 官方 SDK 原生处理。",
-        cta_self: "开源自托管",
-        cta_github: "GitHub",
-        conv_title: "转化漏斗（HTTP 402）",
-        conv_body: "未付费流量撞上付费路由时，返回的不是冷拒绝，而是 HTTP 402 Payment Required——一张可执行的价签。Agent（或钱包）用小额 USDC 结算，带上支付签名重试，通行门放行并代理到上游 API。MCP 工具同样是：发现 → 402 → 支付 → 解锁。无需 API Key、无需月费 SaaS，转化发生在协议层。",
-        self_title: "自托管（开源）",
-        self_sub: "MIT。单进程：HTTP 网关 + Streamable HTTP MCP。指向你的上游 API 即可。",
-        self_env: "线上结算需三个环境变量：CDP_API_KEY_ID、CDP_API_KEY_SECRET、X402_PAY_TO。可选：UPSTREAM_URL、PRICE。",
-        paths_title: "你得到什么",
-        path_http: "HTTP 网关",
-        path_http_body: "用 x402 闸住 /v1/*。未付 → 402 + PAYMENT-REQUIRED。已付 → 反代到你的 API。/health 始终免费。",
-        path_mcp: "MCP 工具",
-        path_mcp_body: "server_info 免费。get_quote 与 proxy_request 按次收费。可接入 Cursor / Claude Desktop。",
+        headline: "给没法刷卡的 AI Agent 用的 Web3 版 Visa 收费站",
+        lead: "为千万级无支付能力的 AI Agent 提供秒级过桥清算，抽成 0.1%。",
+        trust: "清算由 Coinbase CDP 在 Base 上可信完成。你保留 API；Agent 用 USDC 按次付费——无需卡组织、无需月度席位费。",
+        cta_demo: "看它怎么跑",
+        cta_docs: "立刻试用",
+        cta_github: "GitHub 文档",
+        problem_title: "问题",
+        problem_body: "海量 AI Agent 会调用付费 API，但它们没有信用卡，也买不了 SaaS 席位。商家仍需要按次收费——却不想自建一整套计费后台，或把收入锁在月费订阅里。",
+        how_title: "怎么工作",
+        how_sub: "三步。只用商业语言。",
+        step1_n: "01 · 价签",
+        step1_title: "亮出价格",
+        step1_body: "Agent 撞上你的 API，拿到的是 HTTP 402——不是冷拒绝，而是一张机器可读的调用价签。",
+        step2_n: "02 · 付款",
+        step2_title: "秒级清算",
+        step2_body: "Agent 支付一笔小额 USDC。清算走 Coinbase CDP 可信通道——秒级过桥，不是隔夜批处理。",
+        step3_n: "03 · 放行",
+        step3_title: "交付结果",
+        step3_body: "收费站解锁并反代到你的上游。HTTP API 与 Cursor / Claude 里的 MCP 工具同一套闭环。",
+        money_title: "钱怎么分",
+        money_rate: "抽成 0.1%",
+        money_body: "像 Visa 对刷卡流量抽交换费：你保留每次结算的约 99.9%，协议抽 0.1%。自托管免费（MIT）——赚钱靠过桥抽成，不是托管 SaaS 月费。",
+        who_title: "谁该用",
+        who_api: "API 卖家",
+        who_api_body: "把任意上游变成对 Agent 按次收费。人类仍可走免费路径；Agent 在收费站完成转化。",
+        who_mcp: "工具开发者",
+        who_mcp_body: "发布 Agent 可发现、可调用的付费 MCP 工具。一条 npm 命令跑起来，需要时接入 Cursor。",
+        self_title: "试用（自托管）",
+        self_sub: "MIT 开源。单进程：HTTP 收费站 + MCP。指向你的 API，打开闸门。",
+        self_env: "线上结算需设置 CDP_API_KEY_ID、CDP_API_KEY_SECRET、X402_PAY_TO。可选：UPSTREAM_URL、PRICE。",
         cursor_title: "Cursor 配置",
         cursor_sub: "服务暴露后（本地或公网），粘贴到 mcp.json。",
         contact_title: "联系",
-        contact_sub: "自托管即插即用 — 无托管 SaaS 方案。关于自建节点有问题？",
+        contact_sub: "自托管即插即用 — 无托管 SaaS 候补名单。关于自建收费站有问题？",
         contact_cta: "发邮件",
         not_title: "这不是什么",
-        not_body: "不是完整的 A2A 市场，不是 SaaS 计费控制台，不是自定义链结算器。它是一层薄收费闸门：用官方 x402 + CDP 结算，向 Agent 收取 API / MCP 调用费。"
+        not_body: "不是完整的 Agent 市场，不是 SaaS 计费控制台，不是自定义链。它是一层薄的 Visa 式收费站：价签 → 付款 → 放行，经 Coinbase CDP 清算。"
       }
     };
 

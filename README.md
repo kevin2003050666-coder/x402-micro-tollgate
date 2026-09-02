@@ -1,38 +1,32 @@
 # x402-micro-tollgate
 
-**Make any API pay-per-call for agents in 5 minutes.**
+**Visa for AI agents that can’t hold a card.**
 
-Thin seller-side [x402](https://docs.cdp.coinbase.com/x402/quickstart-for-sellers) gateway + MCP server. Unpaid gated HTTP → `402`. Agents pay USDC, then the request is proxied to your upstream. Same process exposes MCP tools that charge per call. Paid surfaces declare the **Bazaar** discovery extension so agents can find you after a real CDP settlement.
+Second-scale settlement bridge for agent traffic — the Web3 tollbooth that clears USDC micropayments and takes **0.1%**.
 
-**Security backed by Coinbase CDP.** We don't touch your keys or settle payments on custom cryptography — EIP-3009 authorization nonces are single-use at the CDP facilitator (source of truth for on-chain uniqueness). The gateway also keeps a short-TTL in-memory fingerprint of `PAYMENT-SIGNATURE` as duplicate-request protection (not a substitute for facilitator nonce checks).
+> 为千万级无支付能力的 AI Agent 提供秒级过桥清算，抽成 0.1% 的 Web3 版 Visa 收费站
 
-Self-hosted drop-in HTTP 402 + MCP paywall — monetization is the protocol/toll fee (optional **0.1%** via custom [`FeeSplitter`](./contracts/README.md) **receive → later `release()`**, not OpenZeppelin PaymentSplitter and not same-tx atomic split), not monthly hosting. Questions: [`2767111713@qq.com`](mailto:2767111713@qq.com?subject=x402-micro-tollgate).
+## What it is
 
-Self-host is free (MIT). Repo: [github.com/kevin2003050666-coder/x402-micro-tollgate](https://github.com/kevin2003050666-coder/x402-micro-tollgate)
+A thin self-hosted tollgate in front of your API or MCP tools. When an agent calls a paid route, it gets **HTTP 402 as a price tag** (not a hard deny). It pays a small USDC amount; you deliver. Clearing runs on **Base** with **Coinbase CDP** as the trusted settlement rail. Humans can still hit a free path; agents convert at the booth.
 
-> Not an official Coinbase product. Not a full A2A marketplace. Not a billing SaaS. A sharp tollgate.
+Self-host is free ([MIT](./LICENSE)). Repo: [github.com/kevin2003050666-coder/x402-micro-tollgate](https://github.com/kevin2003050666-coder/x402-micro-tollgate) · Questions: [`2767111713@qq.com`](mailto:2767111713@qq.com?subject=x402-micro-tollgate)
 
-### Permissionless seller (0.3.0)
+> Not an official Coinbase product. Not a full agent marketplace. Not a billing SaaS. A sharp Visa-style tollbooth.
 
-```ts
-import express from "express";
-import { x402Tollgate } from "x402-micro-tollgate";
+## Who it’s for
 
-const app = express();
-app.use("/v1", await x402Tollgate({ seller: process.env.SELLER! }));
-```
+- **API sellers** who want agents to pay per call — without building a billing console or selling monthly seats
+- **Tool builders** shipping paid MCP endpoints into Cursor / Claude
+- **Operators** who want Visa-like take-rate economics (**0.1%**), not hosting invoices
 
-Or set `SELLER` / `X402_SELLER` in `.env` and run `npm start`. **&lt; $10 USDC** per payment → `payTo` = seller EOA (0 protocol fee). **≥ $10** → CREATE2 [`FeeSplitter`](./contracts/README.md) via `FACTORY_ADDRESS` (operator deploys factory once, `getOrCreate(seller)` before first ≥$10 settle, then `release()`). `MERCHANTS_JSON` stays optional for hosted multi-tenant.
+## How money works
 
-**Factory address is operator-set** — put the live Base `FeeSplitterFactory` in env `FACTORY_ADDRESS` (see [`contracts/deployments/base.json`](./contracts/deployments/base.json)). Do **not** hardcode secrets or private keys in the app.
+1. **Price tag** — unpaid traffic gets HTTP 402 with the amount due (conversion, not rejection)
+2. **Pay** — the agent settles a USDC micropayment in seconds via Coinbase CDP
+3. **Unlock** — the tollgate proxies to your upstream; you keep ~**99.9%**, protocol take **0.1%**
 
-### Log conversion (HTTP 402)
-
-Free traffic hits a gated route and gets HTTP 402 Payment Required—not a hard deny, a price tag. Agents (or wallets) settle a small USDC micropayment, retry with a payment signature, and the tollgate unlocks the upstream response. The same loop works for MCP tools: discover → 402 → pay → unlock. No API keys, no monthly billing SaaS—conversion is the protocol.
-
-### 转化漏斗（HTTP 402）
-
-未付费流量撞上付费路由时，返回的不是冷拒绝，而是 HTTP 402 Payment Required——一张可执行的价签。Agent（或钱包）用小额 USDC 结算，带上支付签名重试，通行门放行并代理到上游 API。MCP 工具同样是：发现 → 402 → 支付 → 解锁。无需 API Key、无需月费 SaaS，转化发生在协议层。
+No protocol monthly fee. Monetization is the toll — like interchange on card rails.
 
 ---
 
@@ -84,6 +78,18 @@ Stdio:
   }
 }
 ```
+
+### Library drop-in (permissionless seller)
+
+```ts
+import express from "express";
+import { x402Tollgate } from "x402-micro-tollgate";
+
+const app = express();
+app.use("/v1", await x402Tollgate({ seller: process.env.SELLER! }));
+```
+
+Or set `SELLER` / `X402_SELLER` in `.env` and run `npm start`. See [Environment](#environment) for the $10 threshold, factory address, and fee-release details.
 
 ---
 
