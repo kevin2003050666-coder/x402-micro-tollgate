@@ -12,6 +12,8 @@ import { mountMcpTransports } from "./mcp/http.js";
 import type { McpPaymentLayer } from "./mcp/payment.js";
 import { resolvePublicDir } from "./static.js";
 import { listMerchantsPublic } from "./merchants.js";
+import { createSessionTokenHandler } from "./session-token.js";
+import { SESSION_TOKEN_PATH } from "./paywall.js";
 
 export interface AppOptions {
   config?: TollgateConfig;
@@ -87,6 +89,11 @@ export async function createApp(options: AppOptions = {}): Promise<CreatedApp> {
         streamableHttp: "/mcp",
         sse: "/sse",
       },
+      paywall: {
+        cdpClientKeyConfigured: Boolean(config.cdpClientApiKey),
+        sessionTokenEndpoint:
+          config.cdpApiKeyId && config.cdpApiKeySecret ? SESSION_TOKEN_PATH : null,
+      },
     });
   });
 
@@ -100,6 +107,10 @@ export async function createApp(options: AppOptions = {}): Promise<CreatedApp> {
   };
   app.get("/merchants", sendMerchants);
   app.get("/v1/merchants", sendMerchants);
+
+  // Coinbase Onramp session token (optional — 503 when CDP server keys missing).
+  // Free path: must stay before payment middleware. Never exposes wallet secrets.
+  app.post(SESSION_TOKEN_PATH, createSessionTokenHandler(config));
 
   // Developer landing (free). Inject contact email; /zh prefers Chinese via client script.
   const sendLanding = (_req: Request, res: Response) => {

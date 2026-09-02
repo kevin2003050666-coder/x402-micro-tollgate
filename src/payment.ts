@@ -14,6 +14,11 @@ import {
 } from "./bazaar.js";
 import { paymentRequiredJsonBody } from "./payment-required-body.js";
 import {
+  buildPaywallConfig,
+  createTollgatePaywall,
+  isBrowserPaymentRequest,
+} from "./paywall.js";
+import {
   merchantIdFromRequest,
   resolveMerchant,
   rewritePaymentRequiredPayTo,
@@ -400,8 +405,12 @@ export async function createLivePaymentLayer(config: TollgateConfig): Promise<Pa
     routes: buildGatedHttpRoutes(config),
   });
 
+  const paywallConfig = buildPaywallConfig(config);
+  const paywall = createTollgatePaywall(config);
   const raw = paymentMiddlewareFromHTTPServer(
     server as unknown as Parameters<typeof paymentMiddlewareFromHTTPServer>[0],
+    paywallConfig,
+    paywall,
   );
 
   return {
@@ -437,6 +446,8 @@ export function createDemoPaymentLayer(config: TollgateConfig): PaymentLayer {
   const quoteExt = httpQuoteBazaarExtension();
   const proxyExt = httpProxyBazaarExtension();
   const fetchMdExt = httpFetchMdBazaarExtension();
+  const paywall = createTollgatePaywall(config);
+  const paywallConfig = buildPaywallConfig(config);
 
   const middleware: RequestHandler = (req, res, next) => {
     if (isFreePath(req.path) || !isGatedPath(req.path, config.gatedPrefix)) {
@@ -529,16 +540,26 @@ export function createDemoPaymentLayer(config: TollgateConfig): PaymentLayer {
       },
     };
 
+    const paymentRequiredHeader = encodePaymentRequiredHeader(
+      paymentRequired as Parameters<typeof encodePaymentRequiredHeader>[0],
+    );
+
     res
       .status(402)
-      .setHeader(
-        "PAYMENT-REQUIRED",
-        encodePaymentRequiredHeader(
-          paymentRequired as Parameters<typeof encodePaymentRequiredHeader>[0],
-        ),
-      )
-      .setHeader("Cache-Control", "no-store")
-      .json(paymentRequiredJsonBody(config));
+      .setHeader("PAYMENT-REQUIRED", paymentRequiredHeader)
+      .setHeader("Cache-Control", "no-store");
+
+    // Browser path: thin Smart Wallet paywall HTML. Agents/MCP keep JSON.
+    if (isBrowserPaymentRequest(req)) {
+      const html = paywall.generateHtml(
+        paymentRequired as Parameters<typeof paywall.generateHtml>[0],
+        paywallConfig,
+      );
+      res.type("html").send(html);
+      return;
+    }
+
+    res.json(paymentRequiredJsonBody(config));
   };
 
   return {
