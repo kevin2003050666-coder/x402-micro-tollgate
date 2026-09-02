@@ -23,9 +23,10 @@ import {
   SignatureDedupeCache,
   withPaymentSignatureDedupe,
 } from "./payment-dedupe.js";
+import { resolvePayTo } from "./resolve-pay-to.js";
 
 /** Base Sepolia / Base mainnet default USDC (from @x402/evm defaults). */
-const DEFAULT_USDC: Record<string, { asset: string; decimals: number }> = {
+export const DEFAULT_USDC: Record<string, { asset: `0x${string}`; decimals: number }> = {
   "eip155:84532": {
     asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
     decimals: 6,
@@ -35,6 +36,30 @@ const DEFAULT_USDC: Record<string, { asset: string; decimals: number }> = {
     decimals: 6,
   },
 };
+
+function usdcForNetwork(network: string): { asset: `0x${string}`; decimals: number } {
+  return DEFAULT_USDC[network] ?? DEFAULT_USDC["eip155:84532"]!;
+}
+
+/** Resolve permissionless seller payTo from amount + config (threshold / CREATE2). */
+export function resolveSellerPayTo(
+  config: TollgateConfig,
+  amountAtomic: bigint | string,
+): `0x${string}` {
+  if (!config.seller) {
+    throw new Error("seller is not configured");
+  }
+  const usdc = usdcForNetwork(config.network);
+  return resolvePayTo({
+    amountAtomic,
+    seller: config.seller,
+    feeFreeBelowUsdc: config.feeFreeBelowUsdc,
+    factoryAddress: config.factoryAddress,
+    feeCollector: config.feeCollector,
+    asset: usdc.asset,
+    feeBps: config.feeBps,
+  });
+}
 
 function dollarPriceToAtomic(price: string, decimals: number): string {
   const match = price.trim().match(/^\$(\d+(?:\.\d+)?)$/);
@@ -64,6 +89,14 @@ type RouteEntry = {
 export type MerchantLocals = {
   merchantId?: string;
   merchant?: MerchantEntry;
+  /** Permissionless seller path (no registry entry). */
+  sellerMode?: boolean;
+};
+
+type RequestWithMerchant = Request & {
+  merchantId?: string;
+  merchant?: MerchantEntry;
+  sellerMode?: boolean;
 };
 
 function setMerchantLocals(
@@ -71,14 +104,26 @@ function setMerchantLocals(
   id: string,
   merchant: MerchantEntry,
 ): void {
-  const locals = req as Request & { merchantId?: string; merchant?: MerchantEntry };
+  const locals = req as RequestWithMerchant;
   locals.merchantId = id;
   locals.merchant = merchant;
+  locals.sellerMode = false;
+}
+
+function setSellerModeLocals(req: Request): void {
+  const locals = req as RequestWithMerchant;
+  locals.merchantId = undefined;
+  locals.merchant = undefined;
+  locals.sellerMode = true;
 }
 
 function getMerchantLocals(req: Request): MerchantLocals {
-  const locals = req as Request & { merchantId?: string; merchant?: MerchantEntry };
-  return { merchantId: locals.merchantId, merchant: locals.merchant };
+  const locals = req as RequestWithMerchant;
+  return {
+    merchantId: locals.merchantId,
+    merchant: locals.merchant,
+    sellerMode: locals.sellerMode,
+  };
 }
 
 /** Build gated HTTP routes with Bazaar discovery metadata. createX402Server also auto-injects bazaar; explicit extensions override with richer schemas. */
@@ -134,10 +179,14 @@ export function buildPublicResourceUrl(
 
 /**
  * On gated paths: resolve merchant (query `merchant` / header `x-merchant-id` /
- * DEFAULT_MERCHANT). Unknown → 400 `{error:"unknown_merchant"}`. Free paths pass through.
+ * DEFAULT_MERCHANT) **or** permissionless seller mode when `config.seller` is set.
+ * Unknown merchant → 400 `{error:"unknown_merchant"}`. Free paths pass through.
  *
  * When `REQUIRE_MERCHANT=true`, omitting merchant id → 400 `{error:"merchant_required"}`
- * (no silent fallback to demo).
+ * (hosted multi-tenant harden — still applies if seller is unset).
+ *
+ * Permissionless: with `SELLER` / `x402Tollgate({ seller })` and no `?merchant=`,
+ * registry is not required.
  */
 export function withMerchantGate(
   middleware: RequestHandler,
@@ -148,12 +197,37 @@ export function withMerchantGate(
       return middleware(req, res, next);
     }
 
-    if (config.requireMerchant) {
-      const explicit = merchantIdFromRequest(req, "");
-      if (!explicit) {
-        res.status(400).json({ error: "merchant_required" });
+    const explicit = merchantIdFromRequest(req, "");
+    const hasRegistry = Object.keys(config.merchants).length > 0;
+
+    if (config.requireMerchant && !explicit) {
+      res.status(400).json({ error: "merchant_required" });
+      return;
+    }
+
+    // Explicit ?merchant= / header → registry (hosted multi-tenant compat).
+    if (explicit) {
+      if (!hasRegistry || !config.merchants[explicit]) {
+        res.status(400).json({ error: "unknown_merchant" });
         return;
       }
+      setMerchantLocals(req, explicit, config.merchants[explicit]!);
+      return middleware(req, res, next);
+    }
+
+    // Permissionless seller path — no registry lookup required.
+    if (config.seller) {
+      setSellerModeLocals(req);
+      return middleware(req, res, next);
+    }
+
+    // Legacy hosted: default merchant from registry.
+    if (!hasRegistry) {
+      res.status(500).json({
+        error: "config_error",
+        message: "No seller (SELLER/X402_SELLER) and no MERCHANTS_JSON registry configured",
+      });
+      return;
     }
 
     const resolved = resolveMerchant(req, config.merchants, config.defaultMerchant);
@@ -189,13 +263,21 @@ export function withPublicResourceUrl(
         const resource = decoded.resource as { url?: string } & Record<string, unknown>;
         resource.url = buildPublicResourceUrl(config, req);
 
-        // Only rewrite payTo when withMerchantGate resolved a merchant (CDP SDK
-        // payTo is global; per-request FeeSplitter is applied here).
-        const { merchant } = getMerchantLocals(req);
+        // CDP SDK payTo is global; per-request payTo is applied here.
+        // Registry merchant → fixed FeeSplitter. Seller mode → threshold resolver.
+        const { merchant, sellerMode } = getMerchantLocals(req);
         if (merchant?.payTo) {
           rewritePaymentRequiredPayTo(
             decoded as unknown as Record<string, unknown>,
             merchant.payTo,
+          );
+        } else if (sellerMode && config.seller) {
+          const accepts = (decoded as { accepts?: Array<{ amount?: string }> }).accepts;
+          const amount = accepts?.[0]?.amount ?? "0";
+          const payTo = resolveSellerPayTo(config, amount);
+          rewritePaymentRequiredPayTo(
+            decoded as unknown as Record<string, unknown>,
+            payTo,
           );
         }
 
@@ -290,6 +372,13 @@ export async function createLivePaymentLayer(config: TollgateConfig): Promise<Pa
     throw new Error("X402_PAY_TO is required for live facilitator mode");
   }
 
+  // Fail fast if seller mode price is ≥ threshold without factory (would 500 on every 402).
+  if (config.seller) {
+    const usdc = usdcForNetwork(config.network);
+    const amount = dollarPriceToAtomic(config.price, usdc.decimals);
+    resolveSellerPayTo(config, amount);
+  }
+
   const server = await createX402Server({
     environment: config.environment,
     apiKeyId: config.cdpApiKeyId,
@@ -318,14 +407,22 @@ export async function createLivePaymentLayer(config: TollgateConfig): Promise<Pa
 /**
  * Demo / offline payment middleware.
  * Returns a protocol-shaped 402 + PAYMENT-REQUIRED (with Bazaar extension) when gated and unpaid.
- * Uses the resolved merchant FeeSplitter as payTo (after withMerchantGate).
+ * Uses resolved merchant FeeSplitter, or permissionless seller resolvePayTo, as payTo.
  */
 export function createDemoPaymentLayer(config: TollgateConfig): PaymentLayer {
+  // Fail fast for misconfigured ≥ threshold seller mode (missing FACTORY_ADDRESS).
+  if (config.seller) {
+    const usdc = usdcForNetwork(config.network);
+    const amount = dollarPriceToAtomic(config.price, usdc.decimals);
+    resolveSellerPayTo(config, amount);
+  }
+
   const fallbackPayTo =
     config.payTo ??
+    config.seller ??
     config.merchants[config.defaultMerchant]?.payTo ??
     ("0x0000000000000000000000000000000000000001" as `0x${string}`);
-  const usdc = DEFAULT_USDC[config.network] ?? DEFAULT_USDC["eip155:84532"]!;
+  const usdc = usdcForNetwork(config.network);
   const amount = dollarPriceToAtomic(config.price, usdc.decimals);
   const quoteExt = httpQuoteBazaarExtension();
   const proxyExt = httpProxyBazaarExtension();
@@ -362,8 +459,21 @@ export function createDemoPaymentLayer(config: TollgateConfig): PaymentLayer {
       return;
     }
 
-    const { merchant } = getMerchantLocals(req);
-    const payTo = merchant?.payTo ?? fallbackPayTo;
+    const { merchant, sellerMode } = getMerchantLocals(req);
+    let payTo: `0x${string}`;
+    try {
+      if (merchant?.payTo) {
+        payTo = merchant.payTo;
+      } else if (sellerMode && config.seller) {
+        payTo = resolveSellerPayTo(config, amount);
+      } else {
+        payTo = fallbackPayTo;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "payTo resolution failed";
+      res.status(500).json({ error: "config_error", message });
+      return;
+    }
 
     const resourceUrl = buildPublicResourceUrl(config, req);
     const bazaar =

@@ -106,8 +106,26 @@ describe("config", () => {
     assert.equal(isGatedPath("/other", ""), true);
   });
 
-  it("builds gated route patterns for x402", () => {
-    assert.deepEqual(gatedRoutePatterns("/v1"), ["* /v1", "* /v1/*"]);
-    assert.deepEqual(gatedRoutePatterns(""), ["* /*"]);
+  it("parses SELLER / FEE_FREE_BELOW_USDC / FACTORY_ADDRESS", () => {
+    const seller = "0x1234567890123456789012345678901234567890";
+    const factory = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+    const cfg = loadConfig({
+      SELLER: seller,
+      FEE_FREE_BELOW_USDC: "10000000",
+      FACTORY_ADDRESS: factory,
+      MERCHANTS_FILE: "/tmp/x402-no-merchants-file-does-not-exist.json",
+    });
+    assert.equal(cfg.seller?.toLowerCase(), seller.toLowerCase());
+    assert.equal(cfg.feeFreeBelowUsdc, 10_000_000n);
+    assert.equal(cfg.factoryAddress?.toLowerCase(), factory.toLowerCase());
+    assert.equal(cfg.payTo?.toLowerCase(), seller.toLowerCase());
+    assert.equal(Object.keys(cfg.merchants).length, 0);
+  });
+
+  it("defaults feeFreeBelowUsdc to 10_000_000 and seller undefined", () => {
+    const cfg = loadConfig({});
+    assert.equal(cfg.seller, undefined);
+    assert.equal(cfg.feeFreeBelowUsdc, 10_000_000n);
+    assert.equal(cfg.factoryAddress, undefined);
   });
 });

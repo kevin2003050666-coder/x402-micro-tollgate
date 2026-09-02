@@ -10,7 +10,19 @@ Self-hosted drop-in HTTP 402 + MCP paywall — monetization is the protocol/toll
 
 Self-host is free (MIT). Repo: [github.com/kevin2003050666-coder/x402-micro-tollgate](https://github.com/kevin2003050666-coder/x402-micro-tollgate)
 
-> Not a full A2A marketplace. Not a billing SaaS. A sharp tollgate.
+> Not an official Coinbase product. Not a full A2A marketplace. Not a billing SaaS. A sharp tollgate.
+
+### Permissionless seller (one line)
+
+```ts
+import express from "express";
+import { x402Tollgate } from "x402-micro-tollgate";
+
+const app = express();
+app.use("/v1", await x402Tollgate({ seller: process.env.SELLER! }));
+```
+
+Or set `SELLER` / `X402_SELLER` in `.env` and run `npm start`. **&lt; $10 USDC** per payment → `payTo` = seller EOA (0 protocol fee). **≥ $10** → CREATE2 [`FeeSplitter`](./contracts/README.md) (deploy factory once, `getOrCreate(seller)` before first ≥$10 settle, then `release()`). `MERCHANTS_JSON` stays optional for hosted multi-tenant.
 
 ---
 
@@ -81,7 +93,10 @@ Uses [`render.yaml`](./render.yaml): Node 22, `npm start`, health `/health`, env
 |---|---|---|
 | `PORT` | `8402` | HTTP listen port |
 | `UPSTREAM_URL` | _(unset → mock)_ | Your API origin |
-| `X402_PAY_TO` | — | EVM receive address (live mode) |
+| `X402_PAY_TO` | — | EVM receive address (live mode SDK init) |
+| `SELLER` / `X402_SELLER` | — | Permissionless seller EOA (EIP-55 validated; invalid → startup fail) |
+| `FACTORY_ADDRESS` | — | `FeeSplitterFactory` for CREATE2 predict when amount ≥ threshold |
+| `FEE_FREE_BELOW_USDC` | `10000000` | Atomic USDC (6 decimals). **&lt; $10** → payTo=seller; **≥ $10** → FeeSplitter |
 | `CDP_API_KEY_ID` / `CDP_API_KEY_SECRET` | — | CDP facilitator |
 | `PRICE` | `$0.001` | Network default USDC |
 | `NETWORK` | `eip155:84532` / `8453` | CAIP-2 |
@@ -91,8 +106,8 @@ Uses [`render.yaml`](./render.yaml): Node 22, `npm start`, health `/health`, env
 | `CONTACT_EMAIL` | `2767111713@qq.com` | Landing contact mailto (not a SaaS CTA) |
 | `FEE_BPS` | `10` | Documented operator fee (0.1%). Live settle still pays 100% to `payTo` until `release()` |
 | `FEE_COLLECTOR` | `0xa922…7e30E` | **Fixed operator** wallet for the 0.1% slice after `FeeSplitter.release()` |
-| `MERCHANTS_JSON` | — | Inline merchant registry JSON (preferred on Render) |
-| `MERCHANTS_FILE` | `merchants.json` | File path; falls back to `merchants.example.json` / built-in demo |
+| `MERCHANTS_JSON` | — | Optional hosted multi-tenant registry (not required when `SELLER` is set) |
+| `MERCHANTS_FILE` | `merchants.json` | File path; falls back to `merchants.example.json` / built-in demo when no seller |
 | `DEFAULT_MERCHANT` | `demo` | Used when `?merchant=` / `x-merchant-id` omitted — **agents SHOULD always send merchant id** |
 | `REQUIRE_MERCHANT` | `false` | When `true`, gated paths reject missing merchant id with `400 {error:"merchant_required"}` (no demo fallback) |
 | `PAYMENT_DEDUPE_TTL_MS` | `600000` | In-memory `PAYMENT-SIGNATURE` replay window (10 min). CDP facilitator nonce remains source of truth |
@@ -104,9 +119,20 @@ Uses [`render.yaml`](./render.yaml): Node 22, `npm start`, health `/health`, env
 | `KEEPER_INTERVAL_MS` | `3600000` | Poll interval (1h) |
 | `KEEPER_MIN_USDC` | `1000000` | Min USDC balance (atomic) before `release()` — default $1 |
 
-### Merchant registry (Plan A)
+### Permissionless seller + $10 threshold
 
-Operator **`FEE_COLLECTOR`** is fixed: `0xa922F38041B5ee227c96A547F106F1330447e30E`. Each merchant gets their own [`FeeSplitter`](./contracts/README.md) (`seller` = merchant wallet, `feeCollector` = operator, `feeBps` = 10). The registry maps `merchantId` → splitter address (`payTo`) + seller for display.
+Toward **0.3.0**: set `SELLER` (or use `x402Tollgate({ seller })`). No `MERCHANTS_JSON` required.
+
+| Amount (USDC atomic, 6 decimals) | `accepts[].payTo` |
+|---|---|
+| **&lt; `10_000_000` ($10)** | seller EOA — **0 protocol fee** |
+| **≥ `10_000_000` ($10)** | CREATE2-predicted `FeeSplitter` for that seller |
+
+x402 `exact` + EIP-3009 only **credits** `payTo` — it does not execute `FeeSplitter` / factory code and does **not** split in the same transaction. For ≥ $10: deploy [`FeeSplitterFactory`](./contracts/README.md), set `FACTORY_ADDRESS`, call `getOrCreate(seller)` before the first such settle, then `release()` later (99.9% / 0.1%). Address typos send funds to the wrong place — the gateway checksum-validates `SELLER` at startup.
+
+### Merchant registry (optional hosted multi-tenant)
+
+Operator **`FEE_COLLECTOR`** is fixed: `0xa922F38041B5ee227c96A547F106F1330447e30E`. Each merchant gets their own [`FeeSplitter`](./contracts/README.md) (`seller` = merchant wallet, `feeCollector` = operator, `feeBps` = 10). The registry maps `merchantId` → splitter address (`payTo`) + seller for display. When `SELLER` is set, the registry is optional; `?merchant=` still works if you provide `MERCHANTS_JSON`.
 
 **Register a merchant:**
 

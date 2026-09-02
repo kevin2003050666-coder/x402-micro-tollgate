@@ -80,6 +80,9 @@ export async function createApp(options: AppOptions = {}): Promise<CreatedApp> {
       publicBaseUrl: config.publicBaseUrl,
       feeCollector: config.feeCollector,
       defaultMerchant: config.defaultMerchant,
+      seller: config.seller ?? null,
+      factoryAddress: config.factoryAddress ?? null,
+      feeFreeBelowUsdc: config.feeFreeBelowUsdc.toString(),
       mcp: {
         streamableHttp: "/mcp",
         sse: "/sse",
