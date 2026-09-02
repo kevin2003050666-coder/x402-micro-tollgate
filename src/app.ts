@@ -18,6 +18,7 @@ import {
   createGasFloorService,
   type GasFloorService,
 } from "./gas-floor.js";
+import { fullNetworkMatrixPublic } from "./networks.js";
 
 export interface AppOptions {
   config?: TollgateConfig;
@@ -91,6 +92,14 @@ export async function createApp(options: AppOptions = {}): Promise<CreatedApp> {
       mode: payment.mode,
       environment: config.environment,
       network: config.network,
+      networks: config.networks,
+      accepts: config.accepts.map((a) => ({
+        network: a.network,
+        asset: a.symbol,
+        address: a.asset,
+        status: a.status,
+        transferMethod: a.transferMethod,
+      })),
       gatedPrefix: config.gatedPrefix || "*",
       upstream: config.upstreamUrl ?? "mock",
       payTo: payment.payToEvmAddress ?? null,
@@ -99,6 +108,7 @@ export async function createApp(options: AppOptions = {}): Promise<CreatedApp> {
       defaultMerchant: config.defaultMerchant,
       seller: config.seller ?? null,
       factoryAddress: config.factoryAddress ?? null,
+      factoryAddresses: config.factoryAddresses,
       feeFreeBelowUsdc: config.feeFreeBelowUsdc.toString(),
       price: config.price,
       facilitatorUrl: config.facilitatorUrl ?? null,
@@ -124,9 +134,19 @@ export async function createApp(options: AppOptions = {}): Promise<CreatedApp> {
       },
       paywall: {
         cdpClientKeyConfigured: Boolean(config.cdpClientApiKey),
+        walletConnectConfigured: Boolean(config.walletConnectProjectId),
+        svmEnabled: config.paywallSvm,
         sessionTokenEndpoint:
           config.cdpApiKeyId && config.cdpApiKeySecret ? SESSION_TOKEN_PATH : null,
+        wallets: [
+          "coinbase-smart-wallet",
+          "metamask",
+          "injected",
+          ...(config.walletConnectProjectId ? ["walletconnect"] : []),
+          ...(config.paywallSvm ? ["solana-paywall-experimental"] : []),
+        ],
       },
+      networkMatrix: fullNetworkMatrixPublic(config.factoryAddresses),
     });
   });
 

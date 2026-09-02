@@ -1,0 +1,11 @@
+{
+  "chain": "TRON",
+  "caip2": "tron:mainnet",
+  "status": "planned",
+  "usdt": {
+    "symbol": "USDT",
+    "address": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+    "decimals": 6
+  },
+  "notes": "No official x402 scheme/facilitator in current deps — do NOT fake settle. Env placeholder / docs only; never emitted into accepts[]. TronLink not offered in paywall."
+}

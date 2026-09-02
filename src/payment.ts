@@ -36,51 +36,177 @@ import {
   dollarPriceToAtomic as dollarPriceToAtomicBigint,
   type GasFloorService,
 } from "./gas-floor.js";
+import {
+  isEip155,
+  isSolana,
+  usdcForNetwork,
+  type AcceptSpec,
+} from "./networks.js";
 
-/** Base Sepolia / Base mainnet default USDC (from @x402/evm defaults). */
-export const DEFAULT_USDC: Record<string, { asset: `0x${string}`; decimals: number }> = {
-  "eip155:84532": {
-    asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-    decimals: 6,
-  },
-  "eip155:8453": {
-    asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-    decimals: 6,
-  },
-};
+/** @deprecated Import from `./networks.js`. */
+export { DEFAULT_USDC } from "./networks.js";
+export { usdcForNetwork } from "./networks.js";
 
-function usdcForNetwork(network: string): { asset: `0x${string}`; decimals: number } {
-  return DEFAULT_USDC[network] ?? DEFAULT_USDC["eip155:84532"]!;
-}
-
-/** Resolve permissionless seller payTo from amount + config (threshold / CREATE2). */
-export function resolveSellerPayTo(
-  config: TollgateConfig,
-  amountAtomic: bigint | string,
-  options?: { feeFreeBelowUsdc?: bigint },
-): `0x${string}` {
-  if (!config.seller) {
-    throw new Error("seller is not configured");
-  }
-  const usdc = usdcForNetwork(config.network);
-  return resolvePayTo({
-    amountAtomic,
-    seller: config.seller,
-    feeFreeBelowUsdc: options?.feeFreeBelowUsdc ?? config.feeFreeBelowUsdc,
-    factoryAddress: config.factoryAddress,
-    feeCollector: config.feeCollector,
-    asset: usdc.asset,
-    feeBps: config.feeBps,
-  });
-}
-
-function dollarPriceToAtomic(price: string, decimals: number): string {
+function dollarPriceToAtomic(price: string, decimals: number = 6): string {
   return dollarPriceToAtomicBigint(price, decimals).toString();
 }
 
 export interface PaymentLayerOptions {
   /** Shared gas-floor service (tests / app). Created from config when omitted. */
   gasFloor?: GasFloorService;
+}
+
+export type ResolveSellerPayToOptions = {
+  feeFreeBelowUsdc?: bigint;
+  network?: string;
+  asset?: `0x${string}`;
+};
+
+/** Resolve permissionless seller payTo from amount + config (threshold / CREATE2). */
+export function resolveSellerPayTo(
+  config: TollgateConfig,
+  amountAtomic: bigint | string,
+  networkOrOptions: string | ResolveSellerPayToOptions = config.network,
+  assetOverride?: `0x${string}`,
+): `0x${string}` {
+  if (!config.seller) {
+    throw new Error("seller is not configured");
+  }
+
+  let network = config.network;
+  let feeFreeBelowUsdc = config.feeFreeBelowUsdc;
+  let asset: `0x${string}` | undefined = assetOverride;
+
+  if (typeof networkOrOptions === "string") {
+    network = networkOrOptions;
+  } else if (networkOrOptions && typeof networkOrOptions === "object") {
+    feeFreeBelowUsdc = networkOrOptions.feeFreeBelowUsdc ?? feeFreeBelowUsdc;
+    network = networkOrOptions.network ?? network;
+    asset = networkOrOptions.asset ?? asset;
+  }
+
+  if (!isEip155(network)) {
+    throw new Error(`FeeSplitter / seller CREATE2 is EVM-only (got ${network})`);
+  }
+  const usdc = usdcForNetwork(network);
+  const resolvedAsset = asset ?? usdc.asset;
+  const factoryAddress =
+    config.factoryAddresses[network] ??
+    (network === config.network ? config.factoryAddress : undefined);
+  return resolvePayTo({
+    amountAtomic,
+    seller: config.seller,
+    feeFreeBelowUsdc,
+    factoryAddress,
+    feeCollector: config.feeCollector,
+    asset: resolvedAsset,
+    feeBps: config.feeBps,
+  });
+}
+
+function resolveAcceptPayTo(
+  config: TollgateConfig,
+  spec: AcceptSpec,
+  merchantPayTo: `0x${string}` | undefined,
+  sellerMode: boolean | undefined,
+  amountAtomic: string,
+  feeFreeBelowUsdc?: bigint,
+): string {
+  if (spec.payTo) return spec.payTo;
+  if (merchantPayTo) return merchantPayTo;
+  if (sellerMode && config.seller && isEip155(spec.network)) {
+    return resolveSellerPayTo(config, amountAtomic, {
+      network: spec.network,
+      asset: isEip155(spec.network) ? (spec.asset as `0x${string}`) : undefined,
+      feeFreeBelowUsdc,
+    });
+  }
+  if (isSolana(spec.network)) {
+    const sol = config.solanaPayTo ?? spec.payTo;
+    if (!sol) {
+      throw new Error("Solana accept missing SOLANA_PAY_TO / payTo");
+    }
+    return sol;
+  }
+  return (
+    config.payTo ??
+    config.seller ??
+    config.merchants[config.defaultMerchant]?.payTo ??
+    "0x0000000000000000000000000000000000000001"
+  );
+}
+
+/** Scale a 6-decimal USDC atomic floor to another token's decimals. */
+function scaleUsdc6Floor(floor6: bigint, decimals: number): bigint {
+  if (decimals === 6) return floor6;
+  if (decimals > 6) return floor6 * 10n ** BigInt(decimals - 6);
+  return floor6 / 10n ** BigInt(6 - decimals);
+}
+
+export function buildAcceptEntries(
+  config: TollgateConfig,
+  opts: {
+    merchantPayTo?: `0x${string}`;
+    sellerMode?: boolean;
+    fallbackPayTo: string;
+    feeFreeBelowUsdc?: bigint;
+    /** Gas / static floor in 6-decimal USDC atomic units. */
+    minAmountAtomic?: bigint;
+  },
+): Array<Record<string, unknown>> {
+  const specs =
+    config.accepts.length > 0
+      ? config.accepts
+      : [
+          {
+            network: config.network,
+            symbol: "USDC" as const,
+            asset: usdcForNetwork(config.network).asset,
+            decimals: 6,
+            name: "USDC",
+            version: "2",
+            transferMethod: "eip3009" as const,
+            status: "live" as const,
+          },
+        ];
+
+  return specs.map((spec) => {
+    let amount = dollarPriceToAtomic(config.price, spec.decimals);
+    if (opts.minAmountAtomic !== undefined && opts.minAmountAtomic > 0n) {
+      const floor = scaleUsdc6Floor(opts.minAmountAtomic, spec.decimals);
+      const current = BigInt(amount);
+      if (current < floor) amount = floor.toString();
+    }
+    let payTo: string;
+    try {
+      payTo = resolveAcceptPayTo(
+        config,
+        spec,
+        opts.merchantPayTo,
+        opts.sellerMode,
+        amount,
+        opts.feeFreeBelowUsdc,
+      );
+    } catch {
+      payTo = opts.fallbackPayTo;
+    }
+    const extra: Record<string, unknown> = {
+      name: spec.name,
+      version: spec.version ?? "2",
+    };
+    if (spec.transferMethod === "permit2") {
+      extra.assetTransferMethod = "permit2";
+    }
+    return {
+      scheme: "exact",
+      network: spec.network as `${string}:${string}`,
+      amount,
+      asset: spec.asset,
+      payTo,
+      maxTimeoutSeconds: 300,
+      extra,
+    };
+  });
 }
 
 export interface PaymentLayer {
@@ -144,17 +270,27 @@ function buildGatedHttpRoutes(config: TollgateConfig): Record<string, RouteEntry
   const quoteExt = httpQuoteBazaarExtension();
   const proxyExt = httpProxyBazaarExtension();
   const fetchMdExt = httpFetchMdBazaarExtension();
+  // Live CDP createX402Server is EVM-oriented; advertise EVM networks from accepts.
+  const fromAccepts = config.accepts
+    .map((a) => a.network)
+    .filter((n) => isEip155(n));
+  const networks =
+    fromAccepts.length > 0
+      ? [...new Set(fromAccepts)]
+      : config.networks.filter(isEip155).length > 0
+        ? config.networks.filter(isEip155)
+        : [config.network];
   const routes: Record<string, RouteEntry> = {
     "GET /v1/quote": {
       price: config.price,
-      networks: [config.network],
+      networks,
       description:
         "Sample quote JSON from upstream (or built-in mock). Pay-per-call via x402 USDC.",
       extensions: quoteExt,
     },
     "GET /v1/fetch-md": {
       price: config.price,
-      networks: [config.network],
+      networks,
       description:
         "Fetch a public http(s) URL and return Markdown. Pay-per-call via x402 USDC.",
       extensions: fetchMdExt,
@@ -165,7 +301,7 @@ function buildGatedHttpRoutes(config: TollgateConfig): Record<string, RouteEntry
     if (routes[pattern]) continue;
     routes[pattern] = {
       price: config.price,
-      networks: [config.network],
+      networks,
       description:
         "Paid reverse-proxy to UPSTREAM_URL via x402-micro-tollgate. Forwards method, path, query, headers, and body after settlement.",
       extensions: proxyExt,
@@ -281,13 +417,24 @@ export function withPublicResourceUrl(
         resource.url = buildPublicResourceUrl(config, req);
 
         const mins = gasFloor?.getSnapshotSync();
-        const accepts = (decoded as { accepts?: Array<{ amount?: string }> }).accepts;
+        const accepts = (
+          decoded as {
+            accepts?: Array<{
+              amount?: string;
+              network?: string;
+              asset?: string;
+              payTo?: string;
+              recipient?: string;
+            }>;
+          }
+        ).accepts;
         if (mins && Array.isArray(accepts)) {
           const floor = mins.effectiveMinPriceAtomic;
           for (const accept of accepts) {
             if (!accept || accept.amount === undefined) continue;
             try {
               const current = BigInt(accept.amount);
+              // Live SDK amounts are typically 6-decimal USDC; bump when below floor.
               if (current < floor) {
                 accept.amount = floor.toString();
               }
@@ -306,14 +453,27 @@ export function withPublicResourceUrl(
             merchant.payTo,
           );
         } else if (sellerMode && config.seller) {
-          const amount = accepts?.[0]?.amount ?? "0";
-          const payTo = resolveSellerPayTo(config, amount, {
-            feeFreeBelowUsdc: mins?.effectiveFeeFreeBelowUsdc,
-          });
-          rewritePaymentRequiredPayTo(
-            decoded as unknown as Record<string, unknown>,
-            payTo,
-          );
+          if (Array.isArray(accepts)) {
+            for (const entry of accepts) {
+              if (!entry || typeof entry !== "object") continue;
+              const amount = entry.amount ?? "0";
+              const net = entry.network ?? config.network;
+              if (!isEip155(net)) continue;
+              const asset =
+                entry.asset && /^0x[a-fA-F0-9]{40}$/.test(String(entry.asset))
+                  ? (entry.asset as `0x${string}`)
+                  : undefined;
+              const payTo = resolveSellerPayTo(config, amount, {
+                network: net,
+                asset,
+                feeFreeBelowUsdc: mins?.effectiveFeeFreeBelowUsdc,
+              });
+              entry.payTo = payTo;
+              if (entry.recipient !== undefined) {
+                entry.recipient = payTo;
+              }
+            }
+          }
         }
 
         return encodePaymentRequiredHeader(
@@ -426,15 +586,21 @@ export async function createLivePaymentLayer(
 
   // Fail fast if seller mode price is ≥ threshold without factory (would 500 on every 402).
   if (config.seller) {
-    const usdc = usdcForNetwork(config.network);
     const mins = gasFloor.getSnapshotSync();
-    resolveSellerPayTo(config, mins.effectiveMinPriceAtomic.toString(), {
-      feeFreeBelowUsdc: mins.effectiveFeeFreeBelowUsdc,
-    });
-    // Also validate configured PRICE path for operators who disable dynamic later.
-    resolveSellerPayTo(config, dollarPriceToAtomic(config.price, usdc.decimals), {
-      feeFreeBelowUsdc: mins.effectiveFeeFreeBelowUsdc,
-    });
+    for (const spec of config.accepts) {
+      if (!isEip155(spec.network)) continue;
+      const amount = dollarPriceToAtomic(config.price, spec.decimals);
+      resolveSellerPayTo(config, amount, {
+        network: spec.network,
+        asset: spec.asset as `0x${string}`,
+        feeFreeBelowUsdc: mins.effectiveFeeFreeBelowUsdc,
+      });
+      resolveSellerPayTo(config, mins.effectiveMinPriceAtomic.toString(), {
+        network: spec.network,
+        asset: spec.asset as `0x${string}`,
+        feeFreeBelowUsdc: mins.effectiveFeeFreeBelowUsdc,
+      });
+    }
   }
 
   // Advertise at least the static min floor in route config; gas bumps rewrite at 402 time.
@@ -500,14 +666,21 @@ export function createDemoPaymentLayer(
 
   // Fail fast for misconfigured ≥ threshold seller mode (missing FACTORY_ADDRESS).
   if (config.seller) {
-    const usdc = usdcForNetwork(config.network);
     const mins = gasFloor.getSnapshotSync();
-    resolveSellerPayTo(config, mins.effectiveMinPriceAtomic.toString(), {
-      feeFreeBelowUsdc: mins.effectiveFeeFreeBelowUsdc,
-    });
-    resolveSellerPayTo(config, dollarPriceToAtomic(config.price, usdc.decimals), {
-      feeFreeBelowUsdc: mins.effectiveFeeFreeBelowUsdc,
-    });
+    for (const spec of config.accepts) {
+      if (!isEip155(spec.network)) continue;
+      const amount = dollarPriceToAtomic(config.price, spec.decimals);
+      resolveSellerPayTo(config, amount, {
+        network: spec.network,
+        asset: spec.asset as `0x${string}`,
+        feeFreeBelowUsdc: mins.effectiveFeeFreeBelowUsdc,
+      });
+      resolveSellerPayTo(config, mins.effectiveMinPriceAtomic.toString(), {
+        network: spec.network,
+        asset: spec.asset as `0x${string}`,
+        feeFreeBelowUsdc: mins.effectiveFeeFreeBelowUsdc,
+      });
+    }
   }
 
   const fallbackPayTo =
@@ -515,7 +688,6 @@ export function createDemoPaymentLayer(
     config.seller ??
     config.merchants[config.defaultMerchant]?.payTo ??
     ("0x0000000000000000000000000000000000000001" as `0x${string}`);
-  const usdc = usdcForNetwork(config.network);
   const quoteExt = httpQuoteBazaarExtension();
   const proxyExt = httpProxyBazaarExtension();
   const fetchMdExt = httpFetchMdBazaarExtension();
@@ -558,19 +730,24 @@ export function createDemoPaymentLayer(
       void gasFloor.refresh();
     }
     const mins = gasFloor.getSnapshotSync();
-    const amount = mins.effectiveMinPriceAtomic.toString();
 
     const { merchant, sellerMode } = getMerchantLocals(req);
-    let payTo: `0x${string}`;
+    const fallbackPayToLocal =
+      merchant?.payTo ??
+      (sellerMode && config.seller ? config.seller : undefined) ??
+      fallbackPayTo;
+
+    let accepts: Array<Record<string, unknown>>;
     try {
-      if (merchant?.payTo) {
-        payTo = merchant.payTo;
-      } else if (sellerMode && config.seller) {
-        payTo = resolveSellerPayTo(config, amount, {
-          feeFreeBelowUsdc: mins.effectiveFeeFreeBelowUsdc,
-        });
-      } else {
-        payTo = fallbackPayTo;
+      accepts = buildAcceptEntries(config, {
+        merchantPayTo: merchant?.payTo,
+        sellerMode,
+        fallbackPayTo: fallbackPayToLocal,
+        feeFreeBelowUsdc: mins.effectiveFeeFreeBelowUsdc,
+        minAmountAtomic: mins.effectiveMinPriceAtomic,
+      });
+      if (accepts.length === 0) {
+        throw new Error("No payment accepts configured");
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "payTo resolution failed";
@@ -603,27 +780,14 @@ export function createDemoPaymentLayer(
         serviceName: "x402-micro-tollgate",
         tags: ["x402", "gateway", "proxy", "bazaar"],
       },
-      accepts: [
-        {
-          scheme: "exact",
-          network: config.network as `${string}:${string}`,
-          amount,
-          asset: usdc.asset,
-          payTo,
-          maxTimeoutSeconds: 300,
-          extra: {
-            name: "USDC",
-            version: "2",
-          },
-        },
-      ],
+      accepts,
       extensions: {
         bazaar,
       },
     };
 
     const paymentRequiredHeader = encodePaymentRequiredHeader(
-      paymentRequired as Parameters<typeof encodePaymentRequiredHeader>[0],
+      paymentRequired as unknown as Parameters<typeof encodePaymentRequiredHeader>[0],
     );
 
     res
@@ -634,7 +798,7 @@ export function createDemoPaymentLayer(
     // Browser path: thin Smart Wallet paywall HTML. Agents/MCP keep JSON.
     if (isBrowserPaymentRequest(req)) {
       const html = paywall.generateHtml(
-        paymentRequired as Parameters<typeof paywall.generateHtml>[0],
+        paymentRequired as unknown as Parameters<typeof paywall.generateHtml>[0],
         paywallConfig,
       );
       res.type("html").send(html);

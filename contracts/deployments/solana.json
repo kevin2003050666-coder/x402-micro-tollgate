@@ -1,0 +1,16 @@
+{
+  "chain": "Solana",
+  "caip2": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+  "status": "experimental",
+  "usdc": {
+    "symbol": "USDC",
+    "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "decimals": 6
+  },
+  "usdt": {
+    "symbol": "USDT",
+    "mint": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+    "decimals": 6
+  },
+  "notes": "CDP facilitator lists Solana exact. This gateway stubs SVM accepts + optional @x402/paywall SVM UI (PAYWALL_SVM / SOLANA_PAY_TO). FeeSplitter is EVM-only. Not default-enabled."
+}

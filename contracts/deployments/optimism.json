@@ -1,0 +1,21 @@
+{
+  "chain": "Optimism",
+  "caip2": "eip155:10",
+  "status": "config-ready",
+  "asset": {
+    "symbol": "USDC",
+    "address": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+    "decimals": 6,
+    "note": "Native Circle USDC on Optimism"
+  },
+  "usdt": {
+    "symbol": "USDT",
+    "address": "0x94b008aA00579c1307B0AD2A4316A7eD9A5E2e5c",
+    "decimals": 6,
+    "transferMethod": "permit2"
+  },
+  "FeeSplitterFactory": {
+    "address": null,
+    "notes": "Not deployed in this repo. Operator may deploy and set FACTORY_ADDRESSES[\"eip155:10\"]. CDP facilitator does not currently list Optimism — alternate facilitator required for live settle."
+  }
+}

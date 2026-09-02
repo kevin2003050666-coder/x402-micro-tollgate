@@ -1,0 +1,21 @@
+{
+  "chain": "Polygon PoS",
+  "caip2": "eip155:137",
+  "status": "config-ready",
+  "asset": {
+    "symbol": "USDC",
+    "address": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+    "decimals": 6,
+    "note": "Native Circle USDC on Polygon (not USDC.e). CDP facilitator lists exact."
+  },
+  "usdt": {
+    "symbol": "USDT",
+    "address": "0xc2132D05D31c914a87C6611C10748AEb04B58e8F",
+    "decimals": 6,
+    "transferMethod": "permit2"
+  },
+  "FeeSplitterFactory": {
+    "address": null,
+    "notes": "Config stub. Deploy optionally; set FACTORY_ADDRESSES[\"eip155:137\"]."
+  }
+}

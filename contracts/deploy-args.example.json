@@ -13,18 +13,40 @@
   "assetByChain": {
     "eip155:8453": {
       "chain": "Base",
-      "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-      "source": "https://developers.circle.com/stablecoins/usdc-contract-addresses"
+      "USDC": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "USDT": "0xfde4C96c8593536E31F1268f9C6E2eC6A3CEF3b2",
+      "source": "Circle + bridged USDT on Base"
+    },
+    "eip155:10": {
+      "chain": "Optimism",
+      "USDC": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+      "USDT": "0x94b008aA00579c1307B0AD2A4316A7eD9A5E2e5c"
     },
     "eip155:42161": {
       "chain": "Arbitrum One",
-      "asset": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
-      "source": "https://developers.circle.com/stablecoins/usdc-contract-addresses"
+      "USDC": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+      "USDT": "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"
     },
     "eip155:137": {
       "chain": "Polygon PoS",
-      "asset": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
-      "source": "https://developers.circle.com/stablecoins/usdc-contract-addresses"
+      "USDC": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+      "USDT": "0xc2132D05D31c914a87C6611C10748AEb04B58e8F"
+    },
+    "eip155:56": {
+      "chain": "BNB Smart Chain",
+      "USDC": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+      "USDT": "0x55d398326f99059fF775485246999027B3197955",
+      "note": "Binance-peg tokens use 18 decimals"
+    },
+    "eip155:1": {
+      "chain": "Ethereum",
+      "USDC": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "USDT": "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+    },
+    "eip155:43114": {
+      "chain": "Avalanche C-Chain",
+      "USDC": "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
+      "USDT": "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7"
     }
   },
   "threshold": {
