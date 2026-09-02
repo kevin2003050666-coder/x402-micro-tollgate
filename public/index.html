@@ -288,6 +288,11 @@
         </div>
       </section>
 
+      <section id="log-conversion">
+        <h2 data-i18n="conv_title">Log conversion (HTTP 402)</h2>
+        <p class="sub" data-i18n="conv_body">Free traffic hits a gated route and gets HTTP 402 Payment Required—not a hard deny, a price tag. Agents (or wallets) settle a small USDC micropayment, retry with a payment signature, and the tollgate unlocks the upstream response. The same loop works for MCP tools: discover → 402 → pay → unlock. No API keys, no monthly billing SaaS—conversion is the protocol.</p>
+      </section>
+
       <section id="self-host">
         <h2 data-i18n="self_title">Self-host (open source)</h2>
         <p class="sub" data-i18n="self_sub">MIT. One process: HTTP gateway + Streamable HTTP MCP. Point it at your upstream API.</p>
@@ -367,6 +372,8 @@ docker compose up</pre>
         trust: "Security backed by Coinbase CDP. We don't touch your keys or settle payments on custom cryptography — signatures and replay protection are powered natively by Coinbase's official SDK.",
         cta_self: "Self-host free",
         cta_github: "GitHub",
+        conv_title: "Log conversion (HTTP 402)",
+        conv_body: "Free traffic hits a gated route and gets HTTP 402 Payment Required—not a hard deny, a price tag. Agents (or wallets) settle a small USDC micropayment, retry with a payment signature, and the tollgate unlocks the upstream response. The same loop works for MCP tools: discover → 402 → pay → unlock. No API keys, no monthly billing SaaS—conversion is the protocol.",
         self_title: "Self-host (open source)",
         self_sub: "MIT. One process: HTTP gateway + Streamable HTTP MCP. Point it at your upstream API.",
         self_env: "Set three env vars for live settlement: CDP_API_KEY_ID, CDP_API_KEY_SECRET, X402_PAY_TO. Optional: UPSTREAM_URL, PRICE.",
@@ -390,6 +397,8 @@ docker compose up</pre>
         trust: "安全由 Coinbase CDP 提供支撑。我们不接触你的密钥，也不用自定义密码学结算——签名与防重放由 Coinbase 官方 SDK 原生处理。",
         cta_self: "开源自托管",
         cta_github: "GitHub",
+        conv_title: "转化漏斗（HTTP 402）",
+        conv_body: "未付费流量撞上付费路由时，返回的不是冷拒绝，而是 HTTP 402 Payment Required——一张可执行的价签。Agent（或钱包）用小额 USDC 结算，带上支付签名重试，通行门放行并代理到上游 API。MCP 工具同样是：发现 → 402 → 支付 → 解锁。无需 API Key、无需月费 SaaS，转化发生在协议层。",
         self_title: "自托管（开源）",
         self_sub: "MIT。单进程：HTTP 网关 + Streamable HTTP MCP。指向你的上游 API 即可。",
         self_env: "线上结算需三个环境变量：CDP_API_KEY_ID、CDP_API_KEY_SECRET、X402_PAY_TO。可选：UPSTREAM_URL、PRICE。",

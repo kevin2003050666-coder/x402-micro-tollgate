@@ -26,6 +26,14 @@ Or set `SELLER` / `X402_SELLER` in `.env` and run `npm start`. **&lt; $10 USDC**
 
 **Factory address is operator-set** — put the live Base `FeeSplitterFactory` in env `FACTORY_ADDRESS` (see [`contracts/deployments/base.json`](./contracts/deployments/base.json)). Do **not** hardcode secrets or private keys in the app.
 
+### Log conversion (HTTP 402)
+
+Free traffic hits a gated route and gets HTTP 402 Payment Required—not a hard deny, a price tag. Agents (or wallets) settle a small USDC micropayment, retry with a payment signature, and the tollgate unlocks the upstream response. The same loop works for MCP tools: discover → 402 → pay → unlock. No API keys, no monthly billing SaaS—conversion is the protocol.
+
+### 转化漏斗（HTTP 402）
+
+未付费流量撞上付费路由时，返回的不是冷拒绝，而是 HTTP 402 Payment Required——一张可执行的价签。Agent（或钱包）用小额 USDC 结算，带上支付签名重试，通行门放行并代理到上游 API。MCP 工具同样是：发现 → 402 → 支付 → 解锁。无需 API Key、无需月费 SaaS，转化发生在协议层。
+
 ---
 
 ## 1-minute quickstart
