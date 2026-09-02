@@ -93,14 +93,26 @@ function tryReadMerchantsFile(filePath: string): MerchantRegistry | undefined {
   return parseMerchantsRegistry(JSON.parse(text) as unknown);
 }
 
+export interface LoadMerchantsOptions {
+  /**
+   * When true (permissionless seller mode), missing registry → `{}`
+   * instead of built-in demo. Explicit MERCHANTS_JSON / file still loads.
+   */
+  optional?: boolean;
+}
+
 /**
  * Load merchant registry at startup.
  * Prefer `MERCHANTS_JSON` (inline), else `MERCHANTS_FILE` (default `merchants.json`),
  * then `merchants.example.json` next to cwd / packaged example, else built-in demo.
+ *
+ * With `{ optional: true }` (seller via env / x402Tollgate), skips example/builtin
+ * fallback so hosted multi-tenant registry is truly optional.
  */
 export function loadMerchantsRegistry(
   env: NodeJS.ProcessEnv = process.env,
   cwd: string = process.cwd(),
+  options: LoadMerchantsOptions = {},
 ): MerchantRegistry {
   const inline = env.MERCHANTS_JSON?.trim();
   if (inline) {
@@ -108,15 +120,17 @@ export function loadMerchantsRegistry(
   }
 
   const fileName = env.MERCHANTS_FILE?.trim() || "merchants.json";
-  const candidates = [
-    path.isAbsolute(fileName) ? fileName : path.join(cwd, fileName),
-    path.join(cwd, "merchants.example.json"),
-  ];
+  const primary = path.isAbsolute(fileName) ? fileName : path.join(cwd, fileName);
+  const fromPrimary = tryReadMerchantsFile(primary);
+  if (fromPrimary) return fromPrimary;
 
-  for (const candidate of candidates) {
-    const loaded = tryReadMerchantsFile(candidate);
-    if (loaded) return loaded;
+  if (options.optional) {
+    return {};
   }
+
+  const example = path.join(cwd, "merchants.example.json");
+  const fromExample = tryReadMerchantsFile(example);
+  if (fromExample) return fromExample;
 
   return { ...BUILTIN_DEMO_MERCHANTS };
 }

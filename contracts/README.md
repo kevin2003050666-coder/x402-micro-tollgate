@@ -1,6 +1,6 @@
 # FeeSplitter — multi-chain receive + release (not same-tx auto-split)
 
-Skeleton only. **Do not deploy from this PR.** Live Render / npm gateway behavior is unchanged until an operator deploys a splitter and sets `X402_PAY_TO` to its address.
+Skeleton + CREATE2 factory. **Do not deploy factory from CI** (no keys). Live Render / npm gateway stays demo-safe until an operator deploys a factory (or per-merchant splitter) and sets env.
 
 Same Solidity on every supported EVM chain — only the constructor `asset` (native Circle USDC) changes per network.
 
@@ -15,7 +15,30 @@ Coinbase CDP + x402 `exact` settles USDC with EIP-3009 `transferWithAuthorizatio
 
 Default `feeBps = 10` → **0.1%**. Integer division floors: when `balance * feeBps < 10000`, fee is **0**. At 10 bps, `$0.001` USDC (= **1000** atomic units, 6 decimals) yields `1000 * 10 / 10000 = **1**` atomic fee.
 
-There is no same-tx auto-split path in CDP/x402 `exact` unless a future facilitator path explicitly calls into the contract (none documented for this flow).
+There is no same-tx auto-split path in CDP/x402 `exact` unless a future facilitator path explicitly calls into the contract (none documented for this flow). **Do not** invent atomic `DynamicFeeSplitter.pay(seller)` settlement — tokens only credit `payTo`.
+
+## FeeSplitterFactory (CREATE2)
+
+[`FeeSplitterFactory.sol`](./FeeSplitterFactory.sol) deploys per-seller [`FeeSplitter`](./FeeSplitter.sol) with:
+
+- Immutable `feeCollector`, `asset`, `feeBps` (set once at factory deploy)
+- Salt = `bytes32(uint256(uint160(seller)))` — one splitter address per seller per factory
+- `predictAddress(seller)` — counterfactual payTo (gateway uses the same CREATE2 math off-chain)
+- `create(seller)` / `getOrCreate(seller)` — operator/deploy helper; **buyers never call the factory**
+- `Deployed(seller, splitter)` event
+
+### Gateway threshold (permissionless seller)
+
+| Single payment amount (USDC, 6 decimals) | `payTo` |
+|---|---|
+| **&lt; `10_000_000` ($10)** | seller EOA — **0 protocol fee** |
+| **≥ `10_000_000` ($10)** | CREATE2-predicted FeeSplitter — later `release()` → 99.9% / 0.1% |
+
+Env: `FEE_FREE_BELOW_USDC` (default `10000000`), `FACTORY_ADDRESS`, `SELLER` / `X402_SELLER`.
+
+**Before the first ≥ $10 settle:** operator must `getOrCreate(seller)` (Remix / cast / script) so the predicted address has code. EIP-3009 will not deploy the contract. Typo risk: a wrong seller address → funds to a wrong EOA or wrong counterfactual splitter — validate checksums at gateway startup.
+
+Off-chain predict uses the FeeSplitter creation bytecode in `src/fee-splitter-bytecode.ts` (regenerate with `npm run generate:feesplitter-bytecode` after editing `FeeSplitter.sol`; needs `solc`).
 
 ## Multi-chain USDC matrix (production)
 
@@ -27,7 +50,7 @@ Native Circle USDC addresses from [Circle USDC contract addresses](https://devel
 | Arbitrum One | `eip155:42161` | `0xaf88d065e77c8cC2239327C5EDb3A432268e5831` | CDP facilitator: `exact` (production) | MetaMask → **Arbitrum One** → deploy with Arb native USDC (not `USDC.e`) |
 | Polygon PoS | `eip155:137` | `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359` | CDP facilitator: `exact` (production) | MetaMask → **Polygon** → deploy with native USDC (not bridged `0x2791…`) |
 
-Constructor inputs shared across chains: `seller`, `feeCollector`, `asset` (row above), `feeBps = 10`. See [`deploy-args.example.json`](./deploy-args.example.json).
+Constructor inputs shared across chains for **FeeSplitter**: `seller`, `feeCollector`, `asset` (row above), `feeBps = 10`. For **FeeSplitterFactory**: `feeCollector`, `asset`, `feeBps = 10` (no seller — sellers are CREATE2 salts). See [`deploy-args.example.json`](./deploy-args.example.json).
 
 ### Testnets (optional)
 
@@ -43,22 +66,29 @@ For dry-runs only — not required for production readiness:
 
 - **ERC-20 EVM only.** This contract assumes a standard ERC-20 `balanceOf` / `transfer` surface (Circle native USDC on EVM).
 - **Solana, BNB Chain, and non-USDC assets** need separate adapters / work — out of scope here.
-- **EIP-3009 settle still only credits `payTo`.** Settlement does not invoke splitter logic; operators must call `release()` later.
-- Do **not** commit private keys. For this product, operator **`feeCollector`** is fixed at `0xa922F38041B5ee227c96A547F106F1330447e30E` (see root README merchant registry). Do **not** force the live gateway `X402_PAY_TO` to a single splitter from this repo — use the merchant registry instead.
+- **EIP-3009 settle still only credits `payTo`.** Settlement does not invoke splitter logic or the factory; operators must deploy via `getOrCreate` before ≥ $10 settles, then call `release()` later.
+- Do **not** commit private keys. Operator **`feeCollector`** defaults to `0xa922F38041B5ee227c96A547F106F1330447e30E`.
 
 ## Deploy (Remix) — operator steps
 
-1. Open [Remix](https://remix.ethereum.org) and paste [`FeeSplitter.sol`](./FeeSplitter.sol).
-2. Compile with Solidity `0.8.20+` (optimizer optional).
-3. Connect MetaMask (or similar) to the target chain from the matrix and deploy `FeeSplitter` with:
-   - `seller_` — seller receive wallet
-   - `feeCollector_` — operator fee wallet
-   - `asset_` — that chain’s native USDC from the matrix
+### A) Permissionless factory (recommended toward 0.3.0)
+
+1. Open [Remix](https://remix.ethereum.org); paste [`FeeSplitter.sol`](./FeeSplitter.sol) + [`FeeSplitterFactory.sol`](./FeeSplitterFactory.sol) (same folder / import path).
+2. Compile with Solidity `0.8.20+`, **optimizer enabled, runs=200** (must match `src/fee-splitter-bytecode.ts` for off-chain CREATE2 predict).
+3. Deploy `FeeSplitterFactory` with:
+   - `feeCollector_` — `0xa922F38041B5ee227c96A547F106F1330447e30E` (or your override)
+   - `asset_` — chain native USDC from the matrix
    - `feeBps_` — `10`
-4. Register the splitter in the gateway merchant registry (`MERCHANTS_JSON` / `merchants.json`) as that merchant’s `payTo`. Optionally set `X402_PAY_TO` to the default merchant splitter for CDP SDK init (global); per-request `payTo` is rewritten from the registry. Set `NETWORK` to the matching CAIP-2.
-5. Optionally set `FEE_BPS=10` and leave `FEE_COLLECTOR` unset (defaults to the fixed operator `0xa922…7e30E`) for ops clarity. While `X402_PAY_TO` remains an EOA, the node still pays **100%** to that EOA (no fee take) unless the registry advertises a splitter.
-6. After payments accumulate on the splitter, anyone can call `release()` — or run the optional gateway keeper (`KEEPER_ENABLED`, see root README; **off by default**; gas can exceed 0.1% on sub-cent payments).
+4. Set gateway `FACTORY_ADDRESS` to the factory, `SELLER` to the seller EOA, `FEE_FREE_BELOW_USDC=10000000`.
+5. Before first payment ≥ $10 to that seller: call `getOrCreate(seller)` once (anyone can call; gas paid by caller).
+6. After USDC accumulates on the splitter, anyone can call `release()` (or optional `KEEPER_*`, **off by default**).
+
+### B) Hosted multi-tenant (MERCHANTS_JSON — optional compat)
+
+1. Deploy `FeeSplitter` per merchant (or use factory `getOrCreate`).
+2. Register in `MERCHANTS_JSON` / `merchants.json` as that merchant’s `payTo`.
+3. Call gated APIs with `?merchant=id` / `x-merchant-id`. Registry `payTo` is used as-is (no amount threshold rewrite).
 
 ## Gateway note
 
-`FEE_BPS` / `FEE_COLLECTOR` are compile-safe config knobs documented in the root README. Operator `FEE_COLLECTOR` defaults to the fixed Plan A address. They do **not** change the CDP live settle path by themselves — register each merchant’s deployed splitter in `MERCHANTS_JSON` (and optionally set `X402_PAY_TO` for SDK init). Per-request `payTo` is rewritten from the registry.
+`FEE_BPS` / `FEE_COLLECTOR` / `FACTORY_ADDRESS` / `FEE_FREE_BELOW_USDC` are documented in the root README. They do **not** change CDP facilitator behavior. Permissionless path: `x402Tollgate({ seller })` or env `SELLER`. Hosted path: `MERCHANTS_JSON` remains optional when seller is set.

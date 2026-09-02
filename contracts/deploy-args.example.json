@@ -1,8 +1,15 @@
 {
-  "_comment": "Remix / forge constructor args for FeeSplitter. Same feeBps on every chain; only asset changes. Replace seller and feeCollector with real wallets. Do not commit secrets.",
-  "seller": "0xSellerPayoutWallet0000000000000000000000",
-  "feeCollector": "0xOperatorFeeWallet00000000000000000000000",
+  "_comment": "Remix / forge constructor args. FeeSplitter: per-seller. FeeSplitterFactory: one deploy per chain (sellers via CREATE2). Do not commit secrets. Optimizer runs=200 to match src/fee-splitter-bytecode.ts.",
+  "feeCollector": "0xa922F38041B5ee227c96A547F106F1330447e30E",
   "feeBps": 10,
+  "FeeSplitter": {
+    "remixDeployOrder": ["seller_", "feeCollector_", "asset_", "feeBps_"],
+    "seller": "0xSellerPayoutWallet0000000000000000000000"
+  },
+  "FeeSplitterFactory": {
+    "remixDeployOrder": ["feeCollector_", "asset_", "feeBps_"],
+    "notes": "After deploy set FACTORY_ADDRESS. Call getOrCreate(seller) before first ≥$10 settle. Gateway predictAddress must use same feeCollector/asset/feeBps."
+  },
   "assetByChain": {
     "eip155:8453": {
       "chain": "Base",
@@ -20,5 +27,8 @@
       "source": "https://developers.circle.com/stablecoins/usdc-contract-addresses"
     }
   },
-  "remixDeployOrder": ["seller_", "feeCollector_", "asset_", "feeBps_"]
+  "threshold": {
+    "FEE_FREE_BELOW_USDC": "10000000",
+    "meaning": "Single payment amount < 10 USDC (6 decimals) → payTo = seller EOA; ≥ → CREATE2 FeeSplitter"
+  }
 }

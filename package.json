@@ -4,13 +4,22 @@
   "description": "Thin x402 payment gateway + MCP server: charge agents USDC per HTTP route or tool call",
   "type": "module",
   "mcpName": "io.github.kevin2003050666-coder/x402-micro-tollgate",
-  "main": "dist/cli.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "bin": {
     "x402-micro-tollgate": "./dist/cli.js"
   },
   "files": [
     "dist",
     "public",
+    "contracts",
     "server.json",
     "merchants.example.json",
     "LICENSE",
@@ -23,7 +32,8 @@
     "start:mcp": "tsx src/cli.ts --stdio",
     "dev": "tsx watch src/cli.ts",
     "test": "tsx --test test/**/*.test.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "generate:feesplitter-bytecode": "node scripts/generate-feesplitter-bytecode.mjs"
   },
   "engines": {
     "node": ">=22"

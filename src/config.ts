@@ -5,6 +5,8 @@ import {
   type MerchantRegistry,
   isEvmAddress,
 } from "./merchants.js";
+import { assertValidSeller, tryParseAddress } from "./address.js";
+import { DEFAULT_FEE_FREE_BELOW_USDC } from "./resolve-pay-to.js";
 
 loadEnv();
 
@@ -53,6 +55,18 @@ export interface TollgateConfig {
   paymentDedupeTtlMs: number;
   /** Max fingerprints kept in the in-memory dedupe LRU. */
   paymentDedupeMaxEntries: number;
+  /**
+   * Permissionless seller EOA (env SELLER / X402_SELLER).
+   * When set, gated payTo uses resolvePayTo(amount, seller) unless ?merchant= hits the registry.
+   */
+  seller: `0x${string}` | undefined;
+  /**
+   * USDC atomic threshold: amount &lt; this → payTo = seller (0 protocol fee).
+   * Default 10_000_000 ($10). Amount ≥ threshold → CREATE2 FeeSplitter.
+   */
+  feeFreeBelowUsdc: bigint;
+  /** FeeSplitterFactory address for CREATE2 predict (≥ threshold). */
+  factoryAddress: `0x${string}` | undefined;
 }
 
 const DEFAULT_NETWORK_BY_ENV: Record<X402Environment, string> = {
@@ -71,22 +85,49 @@ function normalizePrefix(raw: string | undefined): string {
   return raw.startsWith("/") ? raw.replace(/\/+$/, "") : `/${raw.replace(/\/+$/, "")}`;
 }
 
+function parseSellerEnv(env: NodeJS.ProcessEnv): `0x${string}` | undefined {
+  const raw = env.SELLER?.trim() || env.X402_SELLER?.trim();
+  if (!raw) return undefined;
+  // Hard fail on invalid seller — do not silently ignore typos.
+  return assertValidSeller(raw);
+}
+
+function parseFeeFreeBelow(raw: string | undefined): bigint {
+  if (raw === undefined || raw.trim() === "") return DEFAULT_FEE_FREE_BELOW_USDC;
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    throw new Error(
+      `Invalid FEE_FREE_BELOW_USDC: "${raw}" (expected non-negative integer atomic USDC)`,
+    );
+  }
+  return BigInt(trimmed);
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig {
   const environment = parseEnvironment(env.X402_ENVIRONMENT ?? env.CDP_X402_SERVER_ENVIRONMENT);
   const network = env.NETWORK?.trim() || DEFAULT_NETWORK_BY_ENV[environment];
 
-  const merchants = loadMerchantsRegistry(env);
+  const seller = parseSellerEnv(env);
+  // Permissionless seller: skip example/builtin fallback (registry truly optional).
+  // Explicit MERCHANTS_JSON / existing merchants.json still loads when present.
+  const merchants = loadMerchantsRegistry(env, process.cwd(), {
+    optional: Boolean(seller),
+  });
+
   const defaultMerchantRaw = env.DEFAULT_MERCHANT?.trim() || "demo";
+  const merchantIds = Object.keys(merchants);
   const defaultMerchant =
     merchants[defaultMerchantRaw] !== undefined
       ? defaultMerchantRaw
-      : Object.keys(merchants).sort()[0]!;
+      : merchantIds.length > 0
+        ? merchantIds.sort()[0]!
+        : defaultMerchantRaw;
 
   const payToRaw = env.X402_PAY_TO?.trim();
   const payToFromEnv =
     payToRaw && isEvmAddress(payToRaw) ? (payToRaw as `0x${string}`) : undefined;
-  // Prefer explicit X402_PAY_TO; else default merchant FeeSplitter (SDK global payTo).
-  const payTo = payToFromEnv ?? merchants[defaultMerchant]?.payTo;
+  // Prefer explicit X402_PAY_TO; else seller (permissionless); else default merchant FeeSplitter.
+  const payTo = payToFromEnv ?? seller ?? merchants[defaultMerchant]?.payTo;
 
   const cdpApiKeyId = env.CDP_API_KEY_ID?.trim() || undefined;
   const cdpApiKeySecret = env.CDP_API_KEY_SECRET?.trim() || undefined;
@@ -130,6 +171,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig
       ? Math.floor(dedupeMaxRaw)
       : 10_000;
 
+  const feeFreeBelowUsdc = parseFeeFreeBelow(env.FEE_FREE_BELOW_USDC);
+  const factoryRaw = env.FACTORY_ADDRESS?.trim();
+  const factoryAddress = factoryRaw ? tryParseAddress(factoryRaw) : undefined;
+  if (factoryRaw && !factoryAddress) {
+    throw new Error(
+      `Invalid FACTORY_ADDRESS: "${factoryRaw}" is not a valid EVM address (check EIP-55 checksum)`,
+    );
+  }
+
   return {
     port,
     upstreamUrl: env.UPSTREAM_URL?.trim() || undefined,
@@ -150,6 +200,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig
     requireMerchant,
     paymentDedupeTtlMs,
     paymentDedupeMaxEntries,
+    seller,
+    feeFreeBelowUsdc,
+    factoryAddress,
   };
 }
 

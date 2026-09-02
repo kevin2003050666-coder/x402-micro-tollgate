@@ -144,6 +144,16 @@ describe("merchants registry", () => {
     assert.equal((accept.extra as Record<string, unknown>).payTo, next);
   });
 
+  it("optional mode returns empty registry when no file/env (seller path)", () => {
+    const emptyDir = mkdtempSync(path.join(tmpdir(), "merchants-opt-"));
+    try {
+      const empty = loadMerchantsRegistry({}, emptyDir, { optional: true });
+      assert.deepEqual(empty, {});
+    } finally {
+      rmSync(emptyDir, { recursive: true, force: true });
+    }
+  });
+
   it("lists merchants without secrets", () => {
     const list = listMerchantsPublic(BUILTIN_DEMO_MERCHANTS);
     assert.equal(list.length, 1);
