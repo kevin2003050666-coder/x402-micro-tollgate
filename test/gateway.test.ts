@@ -50,7 +50,10 @@ describe("gateway HTTP", () => {
     assert.match(res.text, /Coinbase CDP/);
     assert.match(res.text, /official SDK/i);
     assert.match(res.text, /mailto:2767111713@qq\.com/);
-    assert.doesNotMatch(res.text, /__WAITLIST_EMAIL__/);
+    assert.doesNotMatch(res.text, /__CONTACT_EMAIL__/);
+    assert.doesNotMatch(res.text, /\$9\.90/);
+    assert.doesNotMatch(res.text, /waitlist/i);
+    assert.doesNotMatch(res.text, /托管候补/);
   });
 
   it("GET /zh is free HTML", async () => {
