@@ -18,6 +18,9 @@ describe("config", () => {
     assert.equal(cfg.price, "$0.001");
     assert.equal(cfg.environment, "development");
     assert.equal(cfg.network, "eip155:84532");
+    assert.deepEqual(cfg.networks, ["eip155:84532"]);
+    assert.equal(cfg.accepts.length, 1);
+    assert.equal(cfg.accepts[0]?.symbol, "USDC");
     assert.equal(cfg.gatedPrefix, "/v1");
     assert.equal(cfg.useLiveFacilitator, false);
     assert.equal(cfg.feeBps, 10);

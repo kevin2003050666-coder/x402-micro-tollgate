@@ -47,10 +47,21 @@ export {
   createTollgatePaywall,
   buildPaywallConfig,
   isBrowserPaymentRequest,
+  patchPaywallConnectors,
+  injectBuyerExtras,
+  acceptPickerHtml,
   SESSION_TOKEN_PATH,
   type TollgatePaywallConfig,
 } from "./paywall.js";
 export { createSessionTokenHandler, resolveClientIp } from "./session-token.js";
+export {
+  NETWORK_CATALOG,
+  parseAcceptSpecs,
+  parseNetworksList,
+  fullNetworkMatrixPublic,
+  normalizeNetworkId,
+  type AcceptSpec,
+} from "./networks.js";
 export {
   isBlockedIp,
   assertSafePublicHttpUrl,

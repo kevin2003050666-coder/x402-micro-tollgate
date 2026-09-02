@@ -15,6 +15,12 @@ import {
   clampTtl,
   defaultRpcUrlForNetwork,
 } from "./gas-floor.js";
+import {
+  parseAcceptSpecs,
+  parseFactoryAddresses,
+  parseNetworksList,
+  type AcceptSpec,
+} from "./networks.js";
 
 loadEnv();
 
@@ -32,7 +38,21 @@ export interface TollgateConfig {
   upstreamSharedSecret: string | undefined;
   payTo: `0x${string}` | undefined;
   price: string;
+  /**
+   * Primary CAIP-2 network (first settle / CREATE2 asset default).
+   * Always equal to `networks[0]` after load when NETWORKS drives the list.
+   */
   network: string;
+  /**
+   * Networks from `NETWORKS` / `NETWORK` (EVM + optional Solana).
+   * Default: single Base Sepolia (dev) or Base (prod) — Render-safe.
+   */
+  networks: string[];
+  /**
+   * Active 402 `accepts[]` specs (network × asset). From `ACCEPTS_JSON` or
+   * `NETWORKS` × `ASSETS` (default USDC only). Never includes TRON/planned.
+   */
+  accepts: AcceptSpec[];
   environment: X402Environment;
   /** Path prefix that requires payment (e.g. `/v1`). Empty string gates everything except free paths. */
   gatedPrefix: string;
@@ -43,6 +63,18 @@ export interface TollgateConfig {
    * Safe to expose to the browser; never put `CDP_API_KEY_SECRET` here.
    */
   cdpClientApiKey: string | undefined;
+  /**
+   * WalletConnect Cloud project id for browser paywall (public).
+   * When set, paywall injects WalletConnect alongside Smart Wallet / injected.
+   */
+  walletConnectProjectId: string | undefined;
+  /**
+   * Enable `@x402/paywall` SVM handler when Solana appears in accepts
+   * (or force with PAYWALL_SVM=true). Off by default.
+   */
+  paywallSvm: boolean;
+  /** Solana receive address for experimental SVM accepts (base58). */
+  solanaPayTo: string | undefined;
   /** True when CDP facilitator credentials + pay-to are present. */
   useLiveFacilitator: boolean;
   /**
@@ -104,8 +136,16 @@ export interface TollgateConfig {
    * Env: `FEE_FREE_BELOW_USDC` or `X402_FEE_FREE_BELOW_USDC`.
    */
   feeFreeBelowUsdc: bigint;
-  /** FeeSplitterFactory address for CREATE2 predict (≥ threshold). */
+  /**
+   * FeeSplitterFactory for primary `network` (CREATE2 predict ≥ threshold).
+   * Live Base reference: `contracts/deployments/base.json`.
+   */
   factoryAddress: `0x${string}` | undefined;
+  /**
+   * Optional per-CAIP-2 factory map (`FACTORY_ADDRESSES` JSON + `FACTORY_ADDRESS`).
+   * Other chains are config-ready stubs until an operator deploys.
+   */
+  factoryAddresses: Record<string, `0x${string}`>;
   /**
    * Static minimum accept amount in atomic USDC (`X402_MIN_PRICE_USDC`).
    * 0 = unset (use PRICE only, unless dynamic gas floor bumps).
@@ -193,7 +233,10 @@ function parseFacilitatorUrl(raw: string | undefined): string | undefined {
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig {
   const environment = parseEnvironment(env.X402_ENVIRONMENT ?? env.CDP_X402_SERVER_ENVIRONMENT);
-  const network = env.NETWORK?.trim() || DEFAULT_NETWORK_BY_ENV[environment];
+  const { network, networks } = parseNetworksList(
+    env,
+    DEFAULT_NETWORK_BY_ENV[environment],
+  );
 
   const seller = parseSellerEnv(env);
   // Permissionless seller: skip example/builtin fallback (registry truly optional).
@@ -222,6 +265,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig
   const cdpClientApiKey =
     env.CDP_CLIENT_API_KEY?.trim() ||
     env.CDP_CLIENT_KEY?.trim() || // alias
+    undefined;
+  const walletConnectProjectId =
+    env.WALLETCONNECT_PROJECT_ID?.trim() ||
+    env.WC_PROJECT_ID?.trim() || // alias
     undefined;
   const port = Number(env.PORT) > 0 ? Number(env.PORT) : 8402;
 
@@ -283,13 +330,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig
   const feeFreeBelowUsdc = parseFeeFreeBelow(
     env.FEE_FREE_BELOW_USDC ?? env.X402_FEE_FREE_BELOW_USDC,
   );
-  const factoryRaw = env.FACTORY_ADDRESS?.trim();
-  const factoryAddress = factoryRaw ? tryParseAddress(factoryRaw) : undefined;
-  if (factoryRaw && !factoryAddress) {
-    throw new Error(
-      `Invalid FACTORY_ADDRESS: "${factoryRaw}" is not a valid EVM address (check EIP-55 checksum)`,
-    );
-  }
+  const { factoryAddress, factoryAddresses } = parseFactoryAddresses(
+    env,
+    network,
+    tryParseAddress,
+  );
+
+  const accepts = parseAcceptSpecs(env, networks, network);
+  const solanaPayTo =
+    env.SOLANA_PAY_TO?.trim() || env.X402_SOLANA_PAY_TO?.trim() || undefined;
+  const paywallSvm =
+    env.PAYWALL_SVM?.trim().toLowerCase() === "true" ||
+    accepts.some((a) => a.network.startsWith("solana:"));
 
   const minPriceUsdc = parseAtomicUsdcEnv(env.X402_MIN_PRICE_USDC, "X402_MIN_PRICE_USDC");
   const dynamicMinEnabled =
@@ -335,11 +387,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig
     payTo,
     price: env.PRICE?.trim() || "$0.001",
     network,
+    networks,
+    accepts,
     environment,
     gatedPrefix: normalizePrefix(env.GATED_PREFIX),
     cdpApiKeyId,
     cdpApiKeySecret,
     cdpClientApiKey,
+    walletConnectProjectId,
+    paywallSvm,
+    solanaPayTo,
     useLiveFacilitator: Boolean(cdpApiKeyId && cdpApiKeySecret && payTo),
     facilitatorUrl,
     publicBaseUrl,
@@ -356,6 +413,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig
     seller,
     feeFreeBelowUsdc,
     factoryAddress,
+    factoryAddresses,
     minPriceUsdc,
     dynamicMinEnabled,
     gasCostMaxFraction,

@@ -1,6 +1,7 @@
 import { x402ResourceServer } from "@x402/core/server";
 import type { FacilitatorClient } from "@x402/core/server";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
+import { ExactSvmScheme } from "@x402/svm/exact/server";
 import { createCdpFacilitatorClient } from "@coinbase/cdp-sdk/x402";
 import { bazaarResourceServerExtension } from "@x402/extensions/bazaar";
 import {
@@ -16,6 +17,7 @@ import {
   mcpGetQuoteBazaarExtension,
   mcpProxyRequestBazaarExtension,
 } from "../bazaar.js";
+import { isEip155, isSolana } from "../networks.js";
 
 export interface McpPaymentLayer {
   mode: "live" | "demo";
@@ -34,11 +36,15 @@ export interface McpPaymentLayer {
 type Caip2Network = `${string}:${string}`;
 
 /** Demo facilitator: supports kinds locally; verify/settle always succeed. */
-function createDemoFacilitator(network: Caip2Network): FacilitatorClient {
+function createDemoFacilitator(networks: Caip2Network[]): FacilitatorClient {
   return {
     async getSupported() {
       return {
-        kinds: [{ x402Version: 2, scheme: "exact", network }],
+        kinds: networks.map((network) => ({
+          x402Version: 2,
+          scheme: "exact" as const,
+          network,
+        })),
         extensions: ["bazaar"],
         signers: {} as Record<string, string[]>,
       };
@@ -50,7 +56,7 @@ function createDemoFacilitator(network: Caip2Network): FacilitatorClient {
       return {
         success: true,
         transaction: "0xdemo-settled",
-        network,
+        network: networks[0]!,
         payer: "0xdemo",
       };
     },
@@ -65,7 +71,17 @@ async function buildResourceServer(config: TollgateConfig): Promise<{
   const payTo =
     config.payTo ??
     ("0x0000000000000000000000000000000000000001" as `0x${string}`);
-  const network = config.network as Caip2Network;
+  const networks = [
+    ...new Set(
+      (config.accepts.length > 0
+        ? config.accepts.map((a) => a.network)
+        : config.networks
+      ).filter((n) => isEip155(n) || isSolana(n)),
+    ),
+  ] as Caip2Network[];
+  if (networks.length === 0) {
+    networks.push(config.network as Caip2Network);
+  }
 
   const facilitator = config.useLiveFacilitator
     ? createCdpFacilitatorClient({
@@ -73,11 +89,17 @@ async function buildResourceServer(config: TollgateConfig): Promise<{
         apiKeySecret: config.cdpApiKeySecret,
         ...(config.facilitatorUrl ? { baseUrl: config.facilitatorUrl } : {}),
       })
-    : createDemoFacilitator(network);
+    : createDemoFacilitator(networks);
 
   const resourceServer = new x402ResourceServer(facilitator);
-  resourceServer.register(network, new ExactEvmScheme());
-  // MCP path does NOT auto-declare Bazaar — register the resource-server extension.
+  for (const network of networks) {
+    if (isEip155(network)) {
+      resourceServer.register(network, new ExactEvmScheme());
+    } else if (isSolana(network)) {
+      // Experimental — scheme registers; live settle still facilitator-dependent.
+      resourceServer.register(network, new ExactSvmScheme());
+    }
+  }
   resourceServer.registerExtension(bazaarResourceServerExtension);
   await resourceServer.initialize();
 
@@ -96,22 +118,63 @@ function bazaarForTool(toolName: string): Record<string, unknown> {
 
 /**
  * Creates the MCP-side x402 payment layer.
- * Live: CDP facilitator via createCdpFacilitatorClient.
- * Demo: stub facilitator so unpaid tools still return PaymentRequired without CDP keys.
- *
- * Resource URLs use PUBLIC_BASE_URL + /mcp (real http(s) URL required for Bazaar).
+ * Builds one accept per config.accepts entry (multi-network / multi-asset).
  */
 export async function createMcpPaymentLayer(config: TollgateConfig): Promise<McpPaymentLayer> {
   const { mode, resourceServer, payTo } = await buildResourceServer(config);
   const publicMcpUrl = `${config.publicBaseUrl}/mcp`;
 
-  const accepts = await resourceServer.buildPaymentRequirements({
-    scheme: "exact",
-    network: config.network as `${string}:${string}`,
-    payTo,
-    price: config.price,
-    extra: { name: "USDC", version: "2" },
-  });
+  const accepts: PaymentRequirements[] = [];
+  const specs =
+    config.accepts.length > 0
+      ? config.accepts
+      : [
+          {
+            network: config.network,
+            symbol: "USDC" as const,
+            asset: payTo,
+            decimals: 6,
+            name: "USDC",
+            version: "2",
+            transferMethod: "eip3009" as const,
+            status: "live" as const,
+          },
+        ];
+
+  for (const spec of specs) {
+    // buildPaymentRequirements expects EVM payTo for eip155; Solana uses SOLANA_PAY_TO.
+    const entryPayTo =
+      spec.payTo ??
+      (isSolana(spec.network) ? config.solanaPayTo : undefined) ??
+      payTo;
+    if (!entryPayTo) continue;
+
+    const extra: Record<string, unknown> = {
+      name: spec.name,
+      version: spec.version ?? "2",
+    };
+    if (spec.transferMethod === "permit2") {
+      extra.assetTransferMethod = "permit2";
+    }
+
+    const built = await resourceServer.buildPaymentRequirements({
+      scheme: "exact",
+      network: spec.network as `${string}:${string}`,
+      payTo: entryPayTo,
+      price: config.price,
+      extra,
+    });
+    // Prefer our catalog asset address when the builder defaults to USDC.
+    for (const req of built) {
+      req.asset = spec.asset;
+      if (req.extra && typeof req.extra === "object") {
+        Object.assign(req.extra, extra);
+      } else {
+        req.extra = extra;
+      }
+      accepts.push(req);
+    }
+  }
 
   if (!accepts.length) {
     throw new Error(`Failed to build payment requirements for network ${config.network}`);
@@ -125,7 +188,6 @@ export async function createMcpPaymentLayer(config: TollgateConfig): Promise<Mcp
     const paid = createPaymentWrapper(resourceServer, {
       accepts,
       resource: {
-        // Real URL (not mcp:// display name) — Bazaar keys on (resource, toolName).
         url: publicMcpUrl,
         description,
         mimeType: "application/json",

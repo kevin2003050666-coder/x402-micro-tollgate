@@ -40,17 +40,21 @@ Env: `FEE_FREE_BELOW_USDC` (default `10000000`), `FACTORY_ADDRESS`, `SELLER` / `
 
 Off-chain predict uses the FeeSplitter creation bytecode in `src/fee-splitter-bytecode.ts` (regenerate with `npm run generate:feesplitter-bytecode` after editing `FeeSplitter.sol`; needs `solc`).
 
-## Multi-chain USDC matrix (production)
+## Multi-chain USDC / USDT matrix
 
-Native Circle USDC addresses from [Circle USDC contract addresses](https://developers.circle.com/stablecoins/usdc-contract-addresses). CDP x402 `exact` network support from [CDP network support](https://docs.cdp.coinbase.com/x402/network-support). Use **native USDC**, not bridged `USDC.e`.
+Native Circle USDC and canonical/bridged USDT where known. Gateway catalog status: **live** (CDP facilitator documents `exact`), **config-ready** (addresses wired), **planned** (docs only). See root README.
 
-| Chain | CAIP-2 | Native USDC (`asset`) | x402 / CDP note | Remix network tip |
-|---|---|---|---|---|
-| Base | `eip155:8453` | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | CDP facilitator: `exact` (production) | MetaMask → **Base** → deploy with Base USDC as `asset_` |
-| Arbitrum One | `eip155:42161` | `0xaf88d065e77c8cC2239327C5EDb3A432268e5831` | CDP facilitator: `exact` (production) | MetaMask → **Arbitrum One** → deploy with Arb native USDC (not `USDC.e`) |
-| Polygon PoS | `eip155:137` | `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359` | CDP facilitator: `exact` (production) | MetaMask → **Polygon** → deploy with native USDC (not bridged `0x2791…`) |
+| Chain | CAIP-2 | USDC | USDT | Status | Factory |
+|---|---|---|---|---|---|
+| Base | `eip155:8453` | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | `0xfde4C96c8593536E31F1268f9C6E2eC6A3CEF3b2` | live | **live** [`deployments/base.json`](./deployments/base.json) |
+| Optimism | `eip155:10` | `0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85` | `0x94b008aA00579c1307B0AD2A4316A7eD9A5E2e5c` | config-ready | stub |
+| Arbitrum One | `eip155:42161` | `0xaf88d065e77c8cC2239327C5EDb3A432268e5831` | `0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9` | live | stub |
+| Polygon PoS | `eip155:137` | `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359` | `0xc2132D05D31c914a87C6611C10748AEb04B58e8F` | live | stub |
+| BSC | `eip155:56` | peg 18dec | peg 18dec | config-ready | stub |
+| Ethereum | `eip155:1` | `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` | `0xdAC17F958D2ee523a2206206994597C13D831ec7` | config-ready | stub |
+| Avalanche | `eip155:43114` | `0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E` | `0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7` | config-ready | stub |
 
-Constructor inputs shared across chains for **FeeSplitter**: `seller`, `feeCollector`, `asset` (row above), `feeBps = 10`. For **FeeSplitterFactory**: `feeCollector`, `asset`, `feeBps = 10` (no seller — sellers are CREATE2 salts). See [`deploy-args.example.json`](./deploy-args.example.json).
+Constructor inputs shared across chains for **FeeSplitter**: `seller`, `feeCollector`, `asset` (USDC or chosen ERC-20), `feeBps = 10`. For **FeeSplitterFactory**: `feeCollector`, `asset`, `feeBps = 10`. See [`deploy-args.example.json`](./deploy-args.example.json) and per-chain stubs under [`deployments/`](./deployments/).
 
 ### Testnets (optional)
 
@@ -64,8 +68,8 @@ For dry-runs only — not required for production readiness:
 
 ## Limitations
 
-- **ERC-20 EVM only.** This contract assumes a standard ERC-20 `balanceOf` / `transfer` surface (Circle native USDC on EVM).
-- **Solana, BNB Chain, and non-USDC assets** need separate adapters / work — out of scope here.
+- **FeeSplitter is ERC-20 EVM only.** Solana/TRON need separate adapters — gateway marks them experimental/planned.
+- **USDT** uses Permit2 in x402 accepts (not EIP-3009). Factory live path in this repo is **Base USDC**.
 - **EIP-3009 settle still only credits `payTo`.** Settlement does not invoke splitter logic or the factory; operators must deploy via `getOrCreate` before ≥ $10 settles, then call `release()` later.
 - Do **not** commit private keys. Operator **`feeCollector`** defaults to `0xa922F38041B5ee227c96A547F106F1330447e30E`.
 

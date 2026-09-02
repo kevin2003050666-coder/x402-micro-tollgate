@@ -10,11 +10,44 @@ Second-scale settlement bridge for agent traffic — the Web3 tollbooth that cle
 
 ## What it is
 
-A thin self-hosted tollgate in front of your API or MCP tools. When an agent calls a paid route, it gets **HTTP 402 as a price tag** (not a hard deny). It pays a small USDC amount; you deliver. Clearing runs on **Base** with **Coinbase CDP** as the trusted settlement rail. Humans can still hit a free path; agents convert at the booth.
+A thin self-hosted tollgate in front of your API or MCP tools. When an agent calls a paid route, it gets **HTTP 402 as a price tag** (not a hard deny). It pays a small USDC (or configured USDT) amount; you deliver. Default clearing is **Base + USDC** via **Coinbase CDP**; multi-network accepts are env-driven (see matrix below). Humans can still hit a free path; agents convert at the booth.
 
 Self-host is free ([MIT](./LICENSE)). Repo: [github.com/kevin2003050666-coder/x402-micro-tollgate](https://github.com/kevin2003050666-coder/x402-micro-tollgate) · Questions: [`2767111713@qq.com`](mailto:2767111713@qq.com?subject=x402-micro-tollgate)
 
-> Not an official Coinbase product. Not a full agent marketplace. Not a billing SaaS. A sharp Visa-style tollbooth.
+> Not an official Coinbase product. Not a full agent marketplace. Not a billing SaaS. A sharp Visa-style tollbooth. Not fiat custody.
+
+## Network × asset matrix
+
+Default deploy profile: **Base USDC only** (dev: Base Sepolia). Enable multi with `NETWORKS` + `ASSETS` or `ACCEPTS_JSON` / `X402_*` aliases. Browser HTML 402 shows a **chain + asset picker** when more than one accept is configured.
+
+| Network | CAIP-2 | USDC | USDT | Status | Facilitator / notes |
+|---|---|---|---|---|---|
+| Base | `eip155:8453` | native Circle | bridged | **live** | CDP `exact`. FeeSplitterFactory **live** ([deployments/base.json](./contracts/deployments/base.json)) |
+| Base Sepolia | `eip155:84532` | test USDC | — | **live** | CDP testnet |
+| Optimism | `eip155:10` | native | bridged | config-ready | Addresses wired; **not** on current CDP matrix |
+| Arbitrum One | `eip155:42161` | native | bridged | **live** | CDP `exact`; factory stub |
+| Polygon PoS | `eip155:137` | native (not USDC.e) | PoS USDT | **live** | CDP `exact`; factory stub |
+| BNB Smart Chain | `eip155:56` | peg 18 dec | peg 18 dec | config-ready | Not on CDP list |
+| Ethereum | `eip155:1` | native | Tether | config-ready | Facilitator-dependent |
+| Avalanche C-Chain | `eip155:43114` | native | USDT | config-ready | In `@x402/evm` defaults |
+| Celo / Sei | `eip155:42220` / `1329` | USDC | — | config-ready | Catalog extras |
+| Solana | `solana:5eykt…` | SPL USDC | SPL USDT | **experimental** | CDP lists Solana; gateway stubs + optional SVM paywall (`SOLANA_PAY_TO`) |
+| TRON | `tron:mainnet` | — | TRC-20 | **planned** | No scheme in deps — **never** in `accepts[]` |
+
+USDT on EVM typically uses `extra.assetTransferMethod: "permit2"` (not EIP-3009). FeeSplitter production path remains **Base + USDC**; other chains are config stubs under [`contracts/deployments/`](./contracts/deployments/).
+
+### Browser wallets
+
+| Wallet | Role |
+|---|---|
+| Coinbase Smart Wallet (Passkey) | Primary CTA |
+| MetaMask | Via wagmi injected target |
+| Injected | Other browser wallets |
+| WalletConnect | When `WALLETCONNECT_PROJECT_ID` set |
+| Solana paywall | Experimental, behind Solana accepts / `PAYWALL_SVM` |
+| TronLink | **Not offered** (TRON planned only) |
+
+---
 
 ## Who it’s for
 
@@ -119,7 +152,15 @@ Uses [`render.yaml`](./render.yaml): Node 22, `npm start`, health `/health`, env
 | `CDP_API_KEY_ID` / `CDP_API_KEY_SECRET` | — | CDP facilitator (+ Onramp session tokens) |
 | `CDP_CLIENT_API_KEY` | — | Public CDP client key for browser Smart Wallet paywall (safe in frontend). Alias: `CDP_CLIENT_KEY` |
 | `X402_FACILITATOR_URL` / `CDP_FACILITATOR_URL` | CDP default | Optional alternate facilitator base URL for MCP (`createCdpFacilitatorClient({ baseUrl })`). Single-vendor; no multi-facilitator routing yet |
-| `PRICE` | `$0.001` | Network default USDC |
+| `PRICE` | `$0.001` | Network default USDC/USDT price tag |
+| `NETWORK` / `X402_NETWORK` | `eip155:84532` / `8453` | Primary CAIP-2 (aliases: `base`, `optimism`, …) |
+| `NETWORKS` / `X402_NETWORKS` | _(primary only)_ | Comma/JSON list of networks for multi-accept |
+| `ASSETS` / `X402_ASSETS` | `USDC` | Cross with NETWORKS → accepts (USDC, USDT) |
+| `ACCEPTS_JSON` / `X402_ACCEPTS_JSON` | — | Explicit accepts array (overrides NETWORKS×ASSETS) |
+| `FACTORY_ADDRESSES` | — | JSON map caip2 → FeeSplitterFactory (Base live; others optional) |
+| `SOLANA_PAY_TO` | — | Base58 payTo for experimental Solana accepts |
+| `PAYWALL_SVM` | `false` | Force `@x402/paywall` SVM UI (also auto if Solana in accepts) |
+| `WALLETCONNECT_PROJECT_ID` | — | Enables WalletConnect in browser paywall |
 | `X402_MIN_PRICE_USDC` | — | Optional static minimum accept amount (atomic USDC). Effective price = max(PRICE, this, gas floor) |
 | `X402_DYNAMIC_MIN_ENABLED` | `false` | When `true`, Base base-fee oracle may bump min accept / feeFreeBelow if gas would eat too much of the payment |
 | `X402_GAS_COST_MAX_FRACTION` | `0.5` | Bump when estimated gas USD &gt; this fraction of the payment |
@@ -127,7 +168,6 @@ Uses [`render.yaml`](./render.yaml): Node 22, `npm start`, health `/health`, env
 | `X402_GAS_RPC_URL` / `BASE_RPC_URL` | public Base RPC | JSON-RPC for `eth_getBlockByNumber` baseFee |
 | `X402_GAS_USED_ESTIMATE` | `100000` | Rough L2 gas units for settle cost estimate |
 | `X402_ETH_USD` | `4000` | Conservative ETH/USD floor (no live FX required) |
-| `NETWORK` | `eip155:84532` / `8453` | CAIP-2 |
 | `X402_ENVIRONMENT` | `development` | or `production` |
 | `GATED_PREFIX` | `/v1` | HTTP paths that require payment |
 | `PUBLIC_BASE_URL` | `http://127.0.0.1:$PORT` | Public `https://` origin for Bazaar resource URLs |
