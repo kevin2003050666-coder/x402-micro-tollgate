@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-/// @notice Minimal ERC-20 surface used by FeeSplitter (USDC on Base).
+/// @notice Minimal ERC-20 surface used by FeeSplitter (native Circle USDC on EVM).
 interface IERC20 {
     function balanceOf(address account) external view returns (uint256);
     function transfer(address to, uint256 amount) external returns (bool);
@@ -11,7 +11,10 @@ interface IERC20 {
  * @title FeeSplitter
  * @notice Receive USDC as x402 `payTo`, then permissionlessly release seller + fee shares.
  *
- * Coinbase CDP + x402 `exact` on Base settles via EIP-3009 `transferWithAuthorization`
+ * Chain-agnostic: pass the target chain's native Circle USDC as `asset_` (Base / Arbitrum /
+ * Polygon — see contracts/README.md). Logic is identical across EVM networks.
+ *
+ * Coinbase CDP + x402 `exact` settles via EIP-3009 `transferWithAuthorization`
  * to `payTo`. That only credits the token balance of `payTo` — it does **not** execute
  * receiver bytecode. Therefore this contract cannot auto-split in the same settlement
  * transaction. Call `release()` (or any pull) later:
@@ -38,7 +41,7 @@ contract FeeSplitter {
     /**
      * @param seller_       Receives (10000 - feeBps) / 10000 of balance on release
      * @param feeCollector_ Receives feeBps / 10000 (operator wallet — pass via env at deploy)
-     * @param asset_        ERC-20 to split (Base mainnet USDC: 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913)
+     * @param asset_        ERC-20 to split (per-chain native USDC; see contracts/README.md matrix)
      * @param feeBps_       Fee in basis points; pass 10 for 0.1%. Must be <= 10000.
      */
     constructor(address seller_, address feeCollector_, address asset_, uint16 feeBps_) {

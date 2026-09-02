@@ -1,0 +1,24 @@
+{
+  "_comment": "Remix / forge constructor args for FeeSplitter. Same feeBps on every chain; only asset changes. Replace seller and feeCollector with real wallets. Do not commit secrets.",
+  "seller": "0xSellerPayoutWallet0000000000000000000000",
+  "feeCollector": "0xOperatorFeeWallet00000000000000000000000",
+  "feeBps": 10,
+  "assetByChain": {
+    "eip155:8453": {
+      "chain": "Base",
+      "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "source": "https://developers.circle.com/stablecoins/usdc-contract-addresses"
+    },
+    "eip155:42161": {
+      "chain": "Arbitrum One",
+      "asset": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+      "source": "https://developers.circle.com/stablecoins/usdc-contract-addresses"
+    },
+    "eip155:137": {
+      "chain": "Polygon PoS",
+      "asset": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+      "source": "https://developers.circle.com/stablecoins/usdc-contract-addresses"
+    }
+  },
+  "remixDeployOrder": ["seller_", "feeCollector_", "asset_", "feeBps_"]
+}
