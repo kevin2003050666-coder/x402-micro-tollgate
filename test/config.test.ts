@@ -16,6 +16,25 @@ describe("config", () => {
     assert.equal(cfg.network, "eip155:84532");
     assert.equal(cfg.gatedPrefix, "/v1");
     assert.equal(cfg.useLiveFacilitator, false);
+    assert.equal(cfg.feeBps, 10);
+    assert.equal(cfg.feeCollector, undefined);
+    assert.equal(cfg.contactEmail, "2767111713@qq.com");
+  });
+
+  it("parses FEE_BPS and FEE_COLLECTOR without changing payTo", () => {
+    const cfg = loadConfig({
+      FEE_BPS: "10",
+      FEE_COLLECTOR: "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+      X402_PAY_TO: "0x1234567890123456789012345678901234567890",
+    });
+    assert.equal(cfg.feeBps, 10);
+    assert.equal(cfg.feeCollector, "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd");
+    assert.equal(cfg.payTo, "0x1234567890123456789012345678901234567890");
+  });
+
+  it("falls back CONTACT_EMAIL from legacy WAITLIST_EMAIL", () => {
+    const cfg = loadConfig({ WAITLIST_EMAIL: "ops@example.com" });
+    assert.equal(cfg.contactEmail, "ops@example.com");
   });
 
   it("uses production defaults when environment is production", () => {

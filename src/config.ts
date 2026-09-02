@@ -22,8 +22,15 @@ export interface TollgateConfig {
    * Without this, demos use http://127.0.0.1:PORT — Bazaar listing is a no-op until set + one CDP settlement.
    */
   publicBaseUrl: string;
-  /** Waitlist mailto address for hosted plan. */
-  waitlistEmail: string;
+  /** Contact mailto on the landing page (not a SaaS CTA). */
+  contactEmail: string;
+  /**
+   * Operator fee in basis points (default 10 = 0.1%).
+   * Documented for FeeSplitter deploy; live CDP settle still pays 100% to `payTo`.
+   */
+  feeBps: number;
+  /** Fee collector wallet after FeeSplitter.release(); optional until splitter is deployed. */
+  feeCollector: `0x${string}` | undefined;
 }
 
 const DEFAULT_NETWORK_BY_ENV: Record<X402Environment, string> = {
@@ -61,6 +68,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig
       ? publicRaw
       : `http://127.0.0.1:${port}`;
 
+  const feeBpsRaw = env.FEE_BPS?.trim();
+  const feeBpsParsed = feeBpsRaw !== undefined && feeBpsRaw !== "" ? Number(feeBpsRaw) : 10;
+  const feeBps =
+    Number.isInteger(feeBpsParsed) && feeBpsParsed >= 0 && feeBpsParsed <= 10_000
+      ? feeBpsParsed
+      : 10;
+
+  const feeCollectorRaw = env.FEE_COLLECTOR?.trim();
+  const feeCollector =
+    feeCollectorRaw && /^0x[a-fA-F0-9]{40}$/.test(feeCollectorRaw)
+      ? (feeCollectorRaw as `0x${string}`)
+      : undefined;
+
+  const contactEmail =
+    env.CONTACT_EMAIL?.trim() ||
+    env.WAITLIST_EMAIL?.trim() || // legacy alias
+    "2767111713@qq.com";
+
   return {
     port,
     upstreamUrl: env.UPSTREAM_URL?.trim() || undefined,
@@ -73,7 +98,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig
     cdpApiKeySecret,
     useLiveFacilitator: Boolean(cdpApiKeyId && cdpApiKeySecret && payTo),
     publicBaseUrl,
-    waitlistEmail: env.WAITLIST_EMAIL?.trim() || "2767111713@qq.com",
+    contactEmail,
+    feeBps,
+    feeCollector,
   };
 }
 

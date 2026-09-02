@@ -84,12 +84,12 @@ export async function createApp(options: AppOptions = {}): Promise<CreatedApp> {
     });
   });
 
-  // Developer landing (free). Inject waitlist email; /zh prefers Chinese via client script.
+  // Developer landing (free). Inject contact email; /zh prefers Chinese via client script.
   const sendLanding = (_req: Request, res: Response) => {
     const filePath = path.join(publicDir, "index.html");
     readFile(filePath, "utf8")
       .then((html) => {
-        const injected = html.replaceAll("__WAITLIST_EMAIL__", config.waitlistEmail);
+        const injected = html.replaceAll("__CONTACT_EMAIL__", config.contactEmail);
         res.status(200).type("html").send(injected);
       })
       .catch(() => {

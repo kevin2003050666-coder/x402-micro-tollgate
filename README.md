@@ -6,7 +6,7 @@ Thin seller-side [x402](https://docs.cdp.coinbase.com/x402/quickstart-for-seller
 
 **Security backed by Coinbase CDP.** We don't touch your keys or settle payments on custom cryptography — signatures and replay protection are powered natively by Coinbase's official SDK.
 
-**Hosted waitlist — $9.90/mo.** Don’t want to run the node? Skip SSL, public IP, and uptime babysitting — we host the tollgate. Email [`2767111713@qq.com`](mailto:2767111713@qq.com?subject=x402-micro-tollgate%20hosted%20waitlist%20%249.90) (same CTA on `/`).
+Self-hosted drop-in HTTP 402 + MCP paywall — monetization is the protocol/toll fee (optional **0.1%** [`FeeSplitter`](./contracts/README.md)), not monthly hosting. Questions: [`2767111713@qq.com`](mailto:2767111713@qq.com?subject=x402-micro-tollgate).
 
 Self-host is free (MIT). Repo: [github.com/kevin2003050666-coder/x402-micro-tollgate](https://github.com/kevin2003050666-coder/x402-micro-tollgate)
 
@@ -88,7 +88,11 @@ Uses [`render.yaml`](./render.yaml): Node 22, `npm start`, health `/health`, env
 | `X402_ENVIRONMENT` | `development` | or `production` |
 | `GATED_PREFIX` | `/v1` | HTTP paths that require payment |
 | `PUBLIC_BASE_URL` | `http://127.0.0.1:$PORT` | Public `https://` origin for Bazaar resource URLs |
-| `WAITLIST_EMAIL` | `2767111713@qq.com` | Landing waitlist mailto |
+| `CONTACT_EMAIL` | `2767111713@qq.com` | Landing contact mailto (not a SaaS CTA) |
+| `FEE_BPS` | `10` | Documented operator fee (0.1%). Live settle still pays 100% to `X402_PAY_TO` until you deploy a splitter |
+| `FEE_COLLECTOR` | — | Operator wallet for the 0.1% slice after `FeeSplitter.release()` (do not hardcode) |
+
+If `X402_PAY_TO` is still an EOA, behavior is unchanged (100% to seller). Pointing `X402_PAY_TO` at a deployed [`FeeSplitter`](./contracts/README.md) is an operator choice — x402/`exact` on Base credits the splitter via EIP-3009; call `release()` later to send 99.9% / 0.1%.
 
 ---
 

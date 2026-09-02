@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>x402-micro-tollgate — Make any API pay-per-call for agents</title>
-  <meta name="description" content="HTTP 402 + MCP tools. Security backed by Coinbase CDP. Self-host open source. Monetize your API to agents via x402 USDC payments in 5 minutes." />
+  <meta name="description" content="Self-hosted HTTP 402 + MCP paywall. Security backed by Coinbase CDP. Monetize your API to agents via x402 USDC payments — protocol/toll fee, not monthly hosting." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@600;700;800&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -200,12 +200,6 @@
       margin-bottom: 0.4rem;
     }
     .panel p { color: var(--muted); font-size: 0.98rem; }
-    .price {
-      font-family: var(--font-mono);
-      color: var(--accent);
-      font-size: 1.35rem;
-      margin: 0.6rem 0 0.85rem;
-    }
 
     pre, code {
       font-family: var(--font-mono);
@@ -290,7 +284,7 @@
         <p class="trust" data-i18n="trust">Security backed by Coinbase CDP. We don't touch your keys or settle payments on custom cryptography — signatures and replay protection are powered natively by Coinbase's official SDK.</p>
         <div class="cta-row">
           <a class="btn btn-primary" href="#self-host" data-i18n="cta_self">Self-host free</a>
-          <a class="btn btn-ghost" href="#waitlist" data-i18n="cta_host">Hosted waitlist — $9.90/mo</a>
+          <a class="btn btn-ghost" href="https://github.com/kevin2003050666-coder/x402-micro-tollgate" data-i18n="cta_github">GitHub</a>
         </div>
       </section>
 
@@ -335,17 +329,12 @@ docker compose up</pre>
         </div>
       </section>
 
-      <section id="waitlist">
-        <h2 data-i18n="host_title">Hosted (coming)</h2>
-        <p class="sub" data-i18n="host_sub">Don’t want to run infra? Join the waitlist for a managed tollgate.</p>
-        <div class="panel" style="max-width:28rem">
-          <h3 data-i18n="host_plan">Managed instance</h3>
-          <p class="price">$9.90<span style="font-size:0.85rem;color:var(--muted)"> / month</span></p>
-          <p data-i18n="host_plan_body">We run the gateway. You set pay-to + upstream. No Stripe checkout yet — email us.</p>
-          <p style="margin-top:1rem">
-            <a class="btn btn-primary" href="mailto:__WAITLIST_EMAIL__?subject=x402-micro-tollgate%20hosted%20waitlist%20%249.90" data-i18n="host_cta">Join waitlist</a>
-          </p>
-        </div>
+      <section id="contact">
+        <h2 data-i18n="contact_title">Contact</h2>
+        <p class="sub" data-i18n="contact_sub">Self-hosted drop-in — no hosted SaaS plan. Questions about running your own node?</p>
+        <p style="margin-top:1rem">
+          <a class="btn btn-ghost" href="mailto:__CONTACT_EMAIL__?subject=x402-micro-tollgate" data-i18n="contact_cta">Email</a>
+        </p>
       </section>
 
       <section id="not">
@@ -377,7 +366,7 @@ docker compose up</pre>
         lead: "HTTP 402 + MCP tools. Humans can still hit a free path; agents pay USDC via x402. Sell shovels before the A2A rush.",
         trust: "Security backed by Coinbase CDP. We don't touch your keys or settle payments on custom cryptography — signatures and replay protection are powered natively by Coinbase's official SDK.",
         cta_self: "Self-host free",
-        cta_host: "Hosted waitlist — $9.90/mo",
+        cta_github: "GitHub",
         self_title: "Self-host (open source)",
         self_sub: "MIT. One process: HTTP gateway + Streamable HTTP MCP. Point it at your upstream API.",
         self_env: "Set three env vars for live settlement: CDP_API_KEY_ID, CDP_API_KEY_SECRET, X402_PAY_TO. Optional: UPSTREAM_URL, PRICE.",
@@ -388,11 +377,9 @@ docker compose up</pre>
         path_mcp_body: "server_info free. get_quote and proxy_request charge per call. Drop into Cursor / Claude Desktop.",
         cursor_title: "Cursor config",
         cursor_sub: "After you expose the server (local or public), paste this into mcp.json.",
-        host_title: "Hosted (coming)",
-        host_sub: "Don’t want to run infra? Join the waitlist for a managed tollgate.",
-        host_plan: "Managed instance",
-        host_plan_body: "We run the gateway. You set pay-to + upstream. No Stripe checkout yet — email us.",
-        host_cta: "Join waitlist",
+        contact_title: "Contact",
+        contact_sub: "Self-hosted drop-in — no hosted SaaS plan. Questions about running your own node?",
+        contact_cta: "Email",
         not_title: "What this is not",
         not_body: "Not a full A2A marketplace. Not a SaaS billing console. Not a custom chain facilitator. It’s a thin tollgate: charge agents for API / MCP calls with official x402 + CDP settle."
       },
@@ -402,7 +389,7 @@ docker compose up</pre>
         lead: "HTTP 402 + MCP 工具。人类仍可走免费路径；Agent 通过 x402 用 USDC 付款。在 A2A 爆发前先卖铲子。",
         trust: "安全由 Coinbase CDP 提供支撑。我们不接触你的密钥，也不用自定义密码学结算——签名与防重放由 Coinbase 官方 SDK 原生处理。",
         cta_self: "开源自托管",
-        cta_host: "托管候补 — $9.90/月",
+        cta_github: "GitHub",
         self_title: "自托管（开源）",
         self_sub: "MIT。单进程：HTTP 网关 + Streamable HTTP MCP。指向你的上游 API 即可。",
         self_env: "线上结算需三个环境变量：CDP_API_KEY_ID、CDP_API_KEY_SECRET、X402_PAY_TO。可选：UPSTREAM_URL、PRICE。",
@@ -413,11 +400,9 @@ docker compose up</pre>
         path_mcp_body: "server_info 免费。get_quote 与 proxy_request 按次收费。可接入 Cursor / Claude Desktop。",
         cursor_title: "Cursor 配置",
         cursor_sub: "服务暴露后（本地或公网），粘贴到 mcp.json。",
-        host_title: "托管版（即将推出）",
-        host_sub: "不想自己跑基础设施？加入托管候补名单。",
-        host_plan: "托管实例",
-        host_plan_body: "我们跑网关。你配置收款地址与上游。暂无 Stripe — 发邮件即可。",
-        host_cta: "加入候补",
+        contact_title: "联系",
+        contact_sub: "自托管即插即用 — 无托管 SaaS 方案。关于自建节点有问题？",
+        contact_cta: "发邮件",
         not_title: "这不是什么",
         not_body: "不是完整的 A2A 市场，不是 SaaS 计费控制台，不是自定义链结算器。它是一层薄收费闸门：用官方 x402 + CDP 结算，向 Agent 收取 API / MCP 调用费。"
       }

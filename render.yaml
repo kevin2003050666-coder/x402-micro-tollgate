@@ -33,5 +33,9 @@ services:
         sync: false
       - key: NETWORK
         sync: false
-      - key: WAITLIST_EMAIL
+      - key: CONTACT_EMAIL
+        sync: false
+      - key: FEE_BPS
+        sync: false
+      - key: FEE_COLLECTOR
         sync: false
