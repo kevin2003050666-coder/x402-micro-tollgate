@@ -1,4 +1,10 @@
 import { config as loadEnv } from "dotenv";
+import {
+  loadMerchantsRegistry,
+  OPERATOR_FEE_COLLECTOR,
+  type MerchantRegistry,
+  isEvmAddress,
+} from "./merchants.js";
 
 loadEnv();
 
@@ -29,8 +35,15 @@ export interface TollgateConfig {
    * Documented for FeeSplitter deploy; live CDP settle still pays 100% to `payTo`.
    */
   feeBps: number;
-  /** Fee collector wallet after FeeSplitter.release(); optional until splitter is deployed. */
-  feeCollector: `0x${string}` | undefined;
+  /**
+   * Fixed operator feeCollector wallet (default OPERATOR_FEE_COLLECTOR).
+   * Each merchant FeeSplitter uses seller=merchant wallet, feeCollector=this address.
+   */
+  feeCollector: `0x${string}`;
+  /** merchantId → FeeSplitter payTo + seller for display. Loaded at startup. */
+  merchants: MerchantRegistry;
+  /** Default merchant id when query/header omitted (env DEFAULT_MERCHANT, default `demo`). */
+  defaultMerchant: string;
 }
 
 const DEFAULT_NETWORK_BY_ENV: Record<X402Environment, string> = {
@@ -52,11 +65,19 @@ function normalizePrefix(raw: string | undefined): string {
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig {
   const environment = parseEnvironment(env.X402_ENVIRONMENT ?? env.CDP_X402_SERVER_ENVIRONMENT);
   const network = env.NETWORK?.trim() || DEFAULT_NETWORK_BY_ENV[environment];
+
+  const merchants = loadMerchantsRegistry(env);
+  const defaultMerchantRaw = env.DEFAULT_MERCHANT?.trim() || "demo";
+  const defaultMerchant =
+    merchants[defaultMerchantRaw] !== undefined
+      ? defaultMerchantRaw
+      : Object.keys(merchants).sort()[0]!;
+
   const payToRaw = env.X402_PAY_TO?.trim();
-  const payTo =
-    payToRaw && /^0x[a-fA-F0-9]{40}$/.test(payToRaw)
-      ? (payToRaw as `0x${string}`)
-      : undefined;
+  const payToFromEnv =
+    payToRaw && isEvmAddress(payToRaw) ? (payToRaw as `0x${string}`) : undefined;
+  // Prefer explicit X402_PAY_TO; else default merchant FeeSplitter (SDK global payTo).
+  const payTo = payToFromEnv ?? merchants[defaultMerchant]?.payTo;
 
   const cdpApiKeyId = env.CDP_API_KEY_ID?.trim() || undefined;
   const cdpApiKeySecret = env.CDP_API_KEY_SECRET?.trim() || undefined;
@@ -77,9 +98,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig
 
   const feeCollectorRaw = env.FEE_COLLECTOR?.trim();
   const feeCollector =
-    feeCollectorRaw && /^0x[a-fA-F0-9]{40}$/.test(feeCollectorRaw)
+    feeCollectorRaw && isEvmAddress(feeCollectorRaw)
       ? (feeCollectorRaw as `0x${string}`)
-      : undefined;
+      : OPERATOR_FEE_COLLECTOR;
 
   const contactEmail =
     env.CONTACT_EMAIL?.trim() ||
@@ -101,11 +122,25 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig
     contactEmail,
     feeBps,
     feeCollector,
+    merchants,
+    defaultMerchant,
   };
 }
 
-/** Free HTTP paths that never require x402 payment (MCP has its own payment loop). */
-export const FREE_PATHS = new Set(["/", "/health", "/zh", "/mcp", "/sse", "/messages"]);
+/**
+ * Free HTTP paths that never require x402 payment (MCP has its own payment loop).
+ * `/merchants` and `/v1/merchants` are free registry listing endpoints.
+ */
+export const FREE_PATHS = new Set([
+  "/",
+  "/health",
+  "/zh",
+  "/mcp",
+  "/sse",
+  "/messages",
+  "/merchants",
+  "/v1/merchants",
+]);
 
 export function isFreePath(path: string): boolean {
   const bare = path.split(/[?#]/)[0] || "/";

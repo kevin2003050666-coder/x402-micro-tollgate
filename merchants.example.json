@@ -1,0 +1,7 @@
+{
+  "demo": {
+    "seller": "0xa922F38041B5ee227c96A547F106F1330447e30E",
+    "payTo": "0xC20bC6cAc978f8d2AE94Ee9D41F2DF396A5f10fE",
+    "label": "demo (operator is also seller)"
+  }
+}

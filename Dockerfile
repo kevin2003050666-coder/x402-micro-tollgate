@@ -20,6 +20,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY public ./public
 COPY server.json ./server.json
+COPY merchants.example.json ./merchants.example.json
 EXPOSE 8402
 USER node
 CMD ["node", "dist/cli.js"]

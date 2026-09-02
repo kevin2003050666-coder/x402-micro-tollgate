@@ -89,11 +89,37 @@ Uses [`render.yaml`](./render.yaml): Node 22, `npm start`, health `/health`, env
 | `GATED_PREFIX` | `/v1` | HTTP paths that require payment |
 | `PUBLIC_BASE_URL` | `http://127.0.0.1:$PORT` | Public `https://` origin for Bazaar resource URLs |
 | `CONTACT_EMAIL` | `2767111713@qq.com` | Landing contact mailto (not a SaaS CTA) |
-| `FEE_BPS` | `10` | Documented operator fee (0.1%). Live settle still pays 100% to `X402_PAY_TO` until you deploy a splitter |
-| `FEE_COLLECTOR` | — | Operator wallet for the 0.1% slice after `FeeSplitter.release()` (do not hardcode) |
+| `FEE_BPS` | `10` | Documented operator fee (0.1%). Live settle still pays 100% to `payTo` until `release()` |
+| `FEE_COLLECTOR` | `0xa922…7e30E` | **Fixed operator** wallet for the 0.1% slice after `FeeSplitter.release()` |
+| `MERCHANTS_JSON` | — | Inline merchant registry JSON (preferred on Render) |
+| `MERCHANTS_FILE` | `merchants.json` | File path; falls back to `merchants.example.json` / built-in demo |
+| `DEFAULT_MERCHANT` | `demo` | Used when `?merchant=` / `x-merchant-id` omitted |
 
-If `X402_PAY_TO` is still an EOA, behavior is unchanged (100% to seller). Pointing `X402_PAY_TO` at a deployed [`FeeSplitter`](./contracts/README.md) is an operator choice — x402/`exact` credits the splitter via EIP-3009; call `release()` later to send 99.9% / 0.1%. The same contract deploys on **Base / Arbitrum / Polygon** with per-chain native USDC as `asset` — see the [multi-chain FeeSplitter matrix](./contracts/README.md#multi-chain-usdc-matrix-production) (fee stays **0.1%** / 10 bps).
+### Merchant registry (Plan A)
 
+Operator **`FEE_COLLECTOR`** is fixed: `0xa922F38041B5ee227c96A547F106F1330447e30E`. Each merchant gets their own [`FeeSplitter`](./contracts/README.md) (`seller` = merchant wallet, `feeCollector` = operator, `feeBps` = 10). The registry maps `merchantId` → splitter address (`payTo`) + seller for display.
+
+**Register a merchant:**
+
+1. Deploy `FeeSplitter` with `seller` = merchant wallet, `feeCollector` = `0xa922F38041B5ee227c96A547F106F1330447e30E`, `feeBps` = 10, and the chain’s native USDC as `asset`.
+2. Add an entry to `MERCHANTS_JSON` (or `merchants.json` / copy from [`merchants.example.json`](./merchants.example.json)):
+   ```json
+   {
+     "acme": {
+       "seller": "0xMerchantWallet…",
+       "payTo": "0xDeployedFeeSplitter…",
+       "label": "Acme API"
+     }
+   }
+   ```
+3. Call gated APIs with `?merchant=acme` or header `x-merchant-id: acme` (case-insensitive). Missing → `DEFAULT_MERCHANT` (`demo`). Unknown merchant on gated paths → `400` `{ "error": "unknown_merchant" }`.
+4. Free listing: `GET /merchants` (also `/v1/merchants`).
+
+**Note:** The Base demo splitter has `seller` = `feeCollector` = operator — fine for demo. Real merchants need their own splitter with their wallet as `seller`.
+
+CDP `createX402Server` uses a **single global** `payTo` for SDK init (`X402_PAY_TO` or the default merchant splitter). Per-request merchant routing rewrites `PAYMENT-REQUIRED` `accepts[].payTo` to the resolved FeeSplitter (same pattern as the https `resource.url` rewrite).
+
+If `X402_PAY_TO` is still an EOA and you only have one merchant, behavior stays simple. Multi-merchant production should point each registry `payTo` at a deployed splitter — x402/`exact` credits that splitter via EIP-3009; call `release()` later to send 99.9% / 0.1%. Same contract on **Base / Arbitrum / Polygon** — see the [multi-chain FeeSplitter matrix](./contracts/README.md#multi-chain-usdc-matrix-production).
 ---
 
 ## Bazaar discovery (agents find sellers)
@@ -119,6 +145,7 @@ Launch tip: share your `/mcp` or `/v1/quote` URL in Discord **#x402** after that
 Agents / clients
    ├─ HTTP  /v1/*          → x402 402 (+ bazaar) or proxy → UPSTREAM_URL
    ├─ GET   /v1/fetch-md   → paid HTML→Markdown demo (same x402 gate)
+   ├─ GET   /merchants     → free merchant registry (id, label, seller, payTo)
    ├─ GET   /health        → free
    ├─ GET   /              → developer landing (EN / 中文)
    └─ MCP   /mcp           → server_info (free), get_quote + proxy_request (paid + bazaar)

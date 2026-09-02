@@ -13,6 +13,11 @@ import {
   httpQuoteBazaarExtension,
 } from "./bazaar.js";
 import { paymentRequiredJsonBody } from "./payment-required-body.js";
+import {
+  resolveMerchant,
+  rewritePaymentRequiredPayTo,
+  type MerchantEntry,
+} from "./merchants.js";
 
 /** Base Sepolia / Base mainnet default USDC (from @x402/evm defaults). */
 const DEFAULT_USDC: Record<string, { asset: string; decimals: number }> = {
@@ -49,6 +54,27 @@ type RouteEntry = {
   description: string;
   extensions: Record<string, unknown>;
 };
+
+/** Request locals set by merchant gate / rewrite wrappers. */
+export type MerchantLocals = {
+  merchantId?: string;
+  merchant?: MerchantEntry;
+};
+
+function setMerchantLocals(
+  req: Request,
+  id: string,
+  merchant: MerchantEntry,
+): void {
+  const locals = req as Request & { merchantId?: string; merchant?: MerchantEntry };
+  locals.merchantId = id;
+  locals.merchant = merchant;
+}
+
+function getMerchantLocals(req: Request): MerchantLocals {
+  const locals = req as Request & { merchantId?: string; merchant?: MerchantEntry };
+  return { merchantId: locals.merchantId, merchant: locals.merchant };
+}
 
 /** Build gated HTTP routes with Bazaar discovery metadata. createX402Server also auto-injects bazaar; explicit extensions override with richer schemas. */
 function buildGatedHttpRoutes(config: TollgateConfig): Record<string, RouteEntry> {
@@ -102,10 +128,35 @@ export function buildPublicResourceUrl(
 }
 
 /**
+ * On gated paths: resolve merchant (query `merchant` / header `x-merchant-id` /
+ * DEFAULT_MERCHANT). Unknown → 400 `{error:"unknown_merchant"}`. Free paths pass through.
+ */
+export function withMerchantGate(
+  middleware: RequestHandler,
+  config: TollgateConfig,
+): RequestHandler {
+  return (req, res, next) => {
+    if (isFreePath(req.path) || !isGatedPath(req.path, config.gatedPrefix)) {
+      return middleware(req, res, next);
+    }
+
+    const resolved = resolveMerchant(req, config.merchants, config.defaultMerchant);
+    if (!resolved.ok) {
+      res.status(400).json({ error: "unknown_merchant" });
+      return;
+    }
+
+    setMerchantLocals(req, resolved.id, resolved.merchant);
+    return middleware(req, res, next);
+  };
+}
+
+/**
  * Live SDK builds resource.url via ExpressAdapter.getUrl() =
  * `${req.protocol}://${host}${originalUrl}`. Behind Render, Node sees http
- * unless trust proxy is on. createX402Server has no publicBaseUrl option, so
- * rewrite PAYMENT-REQUIRED to PUBLIC_BASE_URL + path + query.
+ * unless trust proxy is on. createX402Server has a single global payTo — rewrite
+ * PAYMENT-REQUIRED resource.url to PUBLIC_BASE_URL and accepts[].payTo to the
+ * resolved merchant FeeSplitter after the SDK sets the header.
  */
 export function withPublicResourceUrl(
   middleware: RequestHandler,
@@ -119,11 +170,19 @@ export function withPublicResourceUrl(
         if (!decoded.resource || typeof decoded.resource !== "object") {
           return value;
         }
-        const resource = decoded.resource as { url?: string } & Record<
-          string,
-          unknown
-        >;
+        const resource = decoded.resource as { url?: string } & Record<string, unknown>;
         resource.url = buildPublicResourceUrl(config, req);
+
+        // Only rewrite payTo when withMerchantGate resolved a merchant (CDP SDK
+        // payTo is global; per-request FeeSplitter is applied here).
+        const { merchant } = getMerchantLocals(req);
+        if (merchant?.payTo) {
+          rewritePaymentRequiredPayTo(
+            decoded as unknown as Record<string, unknown>,
+            merchant.payTo,
+          );
+        }
+
         return encodePaymentRequiredHeader(
           decoded as Parameters<typeof encodePaymentRequiredHeader>[0],
         );
@@ -182,10 +241,21 @@ function withReadable402Body(
   };
 }
 
+function wrapPaymentMiddleware(
+  raw: RequestHandler,
+  config: TollgateConfig,
+): RequestHandler {
+  return withMerchantGate(
+    withReadable402Body(withPublicResourceUrl(raw, config), config),
+    config,
+  );
+}
+
 /**
  * Live CDP facilitator path — official seller pattern.
- * Requires CDP_API_KEY_ID, CDP_API_KEY_SECRET, and X402_PAY_TO.
+ * Requires CDP_API_KEY_ID, CDP_API_KEY_SECRET, and X402_PAY_TO (or default merchant payTo).
  * Bazaar: createX402Server auto-injects bazaar; we override with discoverable + schemas.
+ * Per-request merchant payTo is applied via PAYMENT-REQUIRED header rewrite (SDK payTo is global).
  */
 export async function createLivePaymentLayer(config: TollgateConfig): Promise<PaymentLayer> {
   if (!config.payTo) {
@@ -208,7 +278,7 @@ export async function createLivePaymentLayer(config: TollgateConfig): Promise<Pa
   );
 
   return {
-    middleware: withReadable402Body(withPublicResourceUrl(raw, config), config),
+    middleware: wrapPaymentMiddleware(raw, config),
     mode: "live",
     payToEvmAddress: server.payToEvmAddress,
   };
@@ -217,10 +287,12 @@ export async function createLivePaymentLayer(config: TollgateConfig): Promise<Pa
 /**
  * Demo / offline payment middleware.
  * Returns a protocol-shaped 402 + PAYMENT-REQUIRED (with Bazaar extension) when gated and unpaid.
+ * Uses the resolved merchant FeeSplitter as payTo (after withMerchantGate).
  */
 export function createDemoPaymentLayer(config: TollgateConfig): PaymentLayer {
-  const payTo =
+  const fallbackPayTo =
     config.payTo ??
+    config.merchants[config.defaultMerchant]?.payTo ??
     ("0x0000000000000000000000000000000000000001" as `0x${string}`);
   const usdc = DEFAULT_USDC[config.network] ?? DEFAULT_USDC["eip155:84532"]!;
   const amount = dollarPriceToAtomic(config.price, usdc.decimals);
@@ -258,6 +330,9 @@ export function createDemoPaymentLayer(config: TollgateConfig): PaymentLayer {
       next();
       return;
     }
+
+    const { merchant } = getMerchantLocals(req);
+    const payTo = merchant?.payTo ?? fallbackPayTo;
 
     const resourceUrl = buildPublicResourceUrl(config, req);
     const bazaar =
@@ -316,9 +391,9 @@ export function createDemoPaymentLayer(config: TollgateConfig): PaymentLayer {
   };
 
   return {
-    middleware: withReadable402Body(middleware, config),
+    middleware: wrapPaymentMiddleware(middleware, config),
     mode: "demo",
-    payToEvmAddress: payTo,
+    payToEvmAddress: fallbackPayTo,
   };
 }
 
