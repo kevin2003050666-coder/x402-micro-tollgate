@@ -4,7 +4,11 @@
 
 Second-scale settlement bridge for agent traffic — the Web3 tollbooth that clears USDC micropayments and takes **0.1%**.
 
+<<<<<<< HEAD
 > 为千万级无支付能力的 AI Agent 提供秒级过桥清算，抽成 0.1% 的 Web3 版 Visa 收费站
+=======
+**Security backed by Coinbase CDP.** We don't touch your keys or settle payments on custom cryptography — EIP-3009 authorization nonces are single-use at the CDP facilitator (source of truth for on-chain uniqueness). The gateway hardens four buyer/seller trust surfaces: **payment-proof replay/race**, **SSRF on URL fetch**, **upstream bypass (shared-secret trust header)**, and **Base congestion / settle-latency** (pending + retry same proof — never treat HTTP timeout alone as “payment failed”).
+>>>>>>> 74045b8 (Harden gateway against replay race, SSRF, upstream bypass, and settle latency)
 
 ## What it is
 
@@ -109,6 +113,7 @@ Uses [`render.yaml`](./render.yaml): Node 22, `npm start`, health `/health`, env
 |---|---|---|
 | `PORT` | `8402` | HTTP listen port |
 | `UPSTREAM_URL` | _(unset → mock)_ | Your API origin |
+| `UPSTREAM_SHARED_SECRET` / `X402_UPSTREAM_SECRET` | — | Optional. After settle, tollgate injects `X-Tollgate-Secret` + `X-Tollgate-Paid` (HMAC). Upstream must require them and reject public direct hits (not mTLS) |
 | `X402_PAY_TO` | — | EVM receive address (live mode SDK init) |
 | `SELLER` / `X402_SELLER` | — | Permissionless seller EOA (EIP-55 validated; invalid → startup fail) |
 | `FACTORY_ADDRESS` | — | Operator-set `FeeSplitterFactory` for CREATE2 predict when amount ≥ threshold (Base live address in [`contracts/deployments/base.json`](./contracts/deployments/base.json); do not hardcode secrets) |
@@ -126,8 +131,10 @@ Uses [`render.yaml`](./render.yaml): Node 22, `npm start`, health `/health`, env
 | `MERCHANTS_FILE` | `merchants.json` | File path; falls back to `merchants.example.json` / built-in demo when no seller |
 | `DEFAULT_MERCHANT` | `demo` | Used when `?merchant=` / `x-merchant-id` omitted — **agents SHOULD always send merchant id** |
 | `REQUIRE_MERCHANT` | `false` | When `true`, gated paths reject missing merchant id with `400 {error:"merchant_required"}` (no demo fallback) |
-| `PAYMENT_DEDUPE_TTL_MS` | `600000` | In-memory `PAYMENT-SIGNATURE` replay window (10 min). CDP facilitator nonce remains source of truth |
-| `PAYMENT_DEDUPE_MAX_ENTRIES` | `10000` | Max fingerprints in the gateway LRU (no Redis) |
+| `PAYMENT_DEDUPE_TTL_MS` | `600000` | In-memory payment-proof idempotency window (10 min). CDP facilitator nonce remains source of truth |
+| `PAYMENT_DEDUPE_MAX_ENTRIES` | `10000` | Max keys in the gateway `PaymentDedupeStore` LRU (no Redis; interface is Redis-ready) |
+| `X402_VERIFY_TIMEOUT_MS` | `15000` | Documented verify-phase budget (local / facilitator verify) |
+| `X402_SETTLE_TIMEOUT_MS` | `180000` | Wait for facilitator/on-chain settle before `202 payment_pending` (default 3 min — Base congestion) |
 | `KEEPER_ENABLED` | `false` | Optional FeeSplitter `release()` keeper — **never on by default** |
 | `KEEPER_DRY_RUN` | _(see notes)_ | `true` logs `keeper_would_release` without sending txs |
 | `KEEPER_PRIVATE_KEY` | — | EVM key for live `release()` only (never commit) |
@@ -172,9 +179,59 @@ CDP `createX402Server` uses a **single global** `payTo` for SDK init (`X402_PAY_
 
 If `X402_PAY_TO` is still an EOA and you only have one merchant, behavior stays simple. Multi-merchant production should point each registry `payTo` at a deployed splitter — x402/`exact` credits that splitter via EIP-3009; call `release()` later (manually or via the optional keeper) to send 99.9% / 0.1%. Same contract on **Base / Arbitrum / Polygon** — see the [multi-chain FeeSplitter matrix](./contracts/README.md#multi-chain-usdc-matrix-production). This is **receive → later `release()`**, not an atomic same-transaction split and not OpenZeppelin `PaymentSplitter`.
 
-### Payment signature dedupe (gateway)
+### Security (gateway hardening)
 
-CDP x402 `exact` + EIP-3009 authorizations are **single-use at the facilitator** (nonce). After a successful settle, the Express gateway also records a SHA-256 fingerprint of the `PAYMENT-SIGNATURE` / `payment-signature` header in an in-memory LRU/TTL map (default TTL 10 minutes, max 10 000 entries). Replaying the same signature string on a gated path within that window returns `400 { "error": "payment_replay" }`. No Redis — process-local only. Restart clears the cache; the facilitator remains authoritative for on-chain nonce uniqueness.
+Four defenses buyers and sellers should know about:
+
+1. **Payment signature replay / race** — Idempotency key = SHA-256(`PAYMENT-SIGNATURE`). An in-process mutex + `PaymentDedupeStore` (memory today; Redis-shaped interface) does set-if-absent **before** upstream. Concurrent losers get `409 { "error": "payment_already_used" }`. Durable mark happens **only after settle success**; verify failure releases the pending reservation so honest retries are not bricked.
+2. **SSRF on `/v1/fetch-md`** — Only `http`/`https`; DNS resolve rejects private/bogon/link-local/metadata; DNS is re-checked before fetch (rebinding defense); redirects are disabled.
+3. **Upstream bypass** — Optional `UPSTREAM_SHARED_SECRET`: after payment, proxy injects `X-Tollgate-Secret` / `X-Tollgate-Paid` / `X-Tollgate-Timestamp`. Your upstream must require them (see snippet below). This is a shared-secret MVP, **not** mTLS.
+4. **Base congestion / settle latency** — `X402_SETTLE_TIMEOUT_MS` (default 3 minutes) is separate from the short verify budget. If settle is still in progress when the waiter expires → `202 { "error": "payment_pending", "retry_with_same_proof": true }`. **Do not** create a new payment and **do not** treat the buyer as failed solely because HTTP timed out — retry the **same** proof; the gateway resumes without double-settling.
+
+### Payment proof idempotency + settle pending
+
+CDP x402 `exact` + EIP-3009 authorizations are **single-use at the facilitator** (nonce). The gateway additionally tracks each proof fingerprint as `pending` → `settled` → `consumed`:
+
+| Store state | Client sees |
+|---|---|
+| `pending` (settle in flight / after settle-wait timeout) | `202 payment_pending` + `retry_with_same_proof: true` |
+| `settled` (paid; upstream not delivered yet) | Skip re-settle; proxy once; mark `consumed` |
+| `consumed` | `409 payment_already_used` |
+
+Process-local only by default (restart clears). Facilitator remains authoritative for on-chain nonce uniqueness.
+
+### Upstream trust header (Express example)
+
+```ts
+import { createHmac, timingSafeEqual } from "node:crypto";
+import type { RequestHandler } from "express";
+
+const SECRET = process.env.UPSTREAM_SHARED_SECRET!;
+
+export const requireTollgate: RequestHandler = (req, res, next) => {
+  const secret = req.header("x-tollgate-secret") ?? "";
+  const paid = req.header("x-tollgate-paid") ?? "";
+  const ts = req.header("x-tollgate-timestamp") ?? "";
+  const expected = createHmac("sha256", SECRET)
+    .update(`${ts}.${req.method.toUpperCase()}.${req.path}`, "utf8")
+    .digest("hex");
+  const okSecret =
+    secret.length === SECRET.length &&
+    timingSafeEqual(Buffer.from(secret), Buffer.from(SECRET));
+  const okPaid =
+    paid.length === expected.length &&
+    timingSafeEqual(Buffer.from(paid), Buffer.from(expected));
+  if (!okSecret || !okPaid) {
+    res.status(401).json({ error: "tollgate_required" });
+    return;
+  }
+  next();
+};
+
+// app.use(requireTollgate); // reject public direct hits
+```
+
+Or import `verifyUpstreamTrustHeaders` from `x402-micro-tollgate` in your upstream process.
 
 ### Optional FeeSplitter release keeper
 

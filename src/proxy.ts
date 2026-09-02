@@ -4,6 +4,10 @@ import type { TollgateConfig } from "./config.js";
 import { isFreePath } from "./config.js";
 import { jsonError } from "./http.js";
 import { mockUpstreamResponse } from "./upstream.js";
+import {
+  buildUpstreamTrustHeaders,
+  TOLLGATE_TRUST_HEADERS,
+} from "./upstream-trust.js";
 
 /** Headers that must not be forwarded to upstream. */
 const STRIP_REQUEST_HEADERS = new Set([
@@ -20,6 +24,8 @@ const STRIP_REQUEST_HEADERS = new Set([
   "payment-required",
   "payment-response",
   "x-demo-payment",
+  // Client must not spoof tollgate trust headers.
+  ...TOLLGATE_TRUST_HEADERS.map((h) => h.toLowerCase()),
 ]);
 
 export function mockUpstreamHandler(req: Request, res: Response): void {
@@ -51,6 +57,16 @@ export function createUpstreamHandler(config: TollgateConfig): RequestHandler {
       proxyReq: (proxyReq, req) => {
         for (const name of STRIP_REQUEST_HEADERS) {
           proxyReq.removeHeader(name);
+        }
+        // Inject trust headers only on the post-payment proxy path.
+        if (config.upstreamSharedSecret) {
+          const trust = buildUpstreamTrustHeaders(config.upstreamSharedSecret, {
+            method: req.method ?? "GET",
+            path: (req as Request).path ?? "/",
+          });
+          for (const [name, value] of Object.entries(trust.headers)) {
+            proxyReq.setHeader(name, value);
+          }
         }
         // Re-apply body after express.json() consumed the stream.
         fixRequestBody(proxyReq, req);

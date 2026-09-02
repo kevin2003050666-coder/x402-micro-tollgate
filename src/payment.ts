@@ -22,6 +22,7 @@ import {
 import {
   SignatureDedupeCache,
   withPaymentSignatureDedupe,
+  type PaymentDedupeStore,
 } from "./payment-dedupe.js";
 import { resolvePayTo } from "./resolve-pay-to.js";
 
@@ -343,18 +344,27 @@ function wrapPaymentMiddleware(
   raw: RequestHandler,
   config: TollgateConfig,
   dedupeCache?: SignatureDedupeCache,
+  dedupeStore?: PaymentDedupeStore,
 ): RequestHandler {
-  // Order: merchant gate → signature replay check → readable 402 / public URL → settle.
-  // After successful settle (next()), dedupe records the PAYMENT-SIGNATURE fingerprint.
-  // CDP facilitator EIP-3009 nonce remains the on-chain source of truth; this is short-TTL defense-in-depth.
+  // Order: merchant gate → payment idempotency / settle-latency guard → readable 402 / public URL → settle.
+  //
+  // Idempotency policy (see payment-dedupe.ts):
+  // - Mutex per PAYMENT-SIGNATURE fingerprint, then PaymentDedupeStore (set-if-absent).
+  // - Mark durable settled only after facilitator settle success; hold short-lived lock during settle.
+  // - Settle wait uses config.settleTimeoutMs (minutes-scale). On timeout → 202 payment_pending +
+  //   retry_with_same_proof (never treat buyer payment as failed solely due to HTTP timeout).
+  // - CDP facilitator EIP-3009 nonce remains the on-chain source of truth.
   return withMerchantGate(
     withPaymentSignatureDedupe(
       withReadable402Body(withPublicResourceUrl(raw, config), config),
       {
         cache: dedupeCache,
+        store: dedupeStore ?? dedupeCache?.getStore(),
         ttlMs: config.paymentDedupeTtlMs,
         maxEntries: config.paymentDedupeMaxEntries,
         gatedPrefix: config.gatedPrefix,
+        settleTimeoutMs: config.settleTimeoutMs,
+        verifyTimeoutMs: config.verifyTimeoutMs,
       },
     ),
     config,

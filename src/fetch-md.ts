@@ -1,7 +1,16 @@
-import dns from "node:dns/promises";
-import net from "node:net";
 import type { Request, Response, RequestHandler } from "express";
 import { jsonError } from "./http.js";
+import {
+  assertSafePublicHttpUrlPinned,
+  type SafePublicUrl,
+} from "./ssrf.js";
+
+export {
+  isBlockedIp,
+  assertSafePublicHttpUrl,
+  assertSafePublicHttpUrlPinned,
+  type SafePublicUrl,
+} from "./ssrf.js";
 
 const FETCH_TIMEOUT_MS = 8_000;
 const MAX_BYTES = 512_000;
@@ -75,94 +84,6 @@ function decodeEntities(s: string): string {
     .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)));
 }
 
-export function isBlockedIp(ip: string): boolean {
-  if (net.isIPv4(ip)) {
-    const parts = ip.split(".").map(Number);
-    const [a, b] = parts;
-    if (a === 10) return true;
-    if (a === 127) return true;
-    if (a === 0) return true;
-    if (a === 169 && b === 254) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 192 && b === 168) return true;
-    if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
-    if (a >= 224) return true; // multicast / reserved
-    return false;
-  }
-  if (net.isIPv6(ip)) {
-    const normalized = ip.toLowerCase();
-    if (normalized === "::1" || normalized === "::") return true;
-    if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true; // ULA
-    if (normalized.startsWith("fe80")) return true; // link-local
-    if (normalized.startsWith("::ffff:")) {
-      const v4 = normalized.slice("::ffff:".length);
-      if (net.isIPv4(v4)) return isBlockedIp(v4);
-    }
-    return false;
-  }
-  return true;
-}
-
-export async function assertSafePublicHttpUrl(raw: string): Promise<URL> {
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    throw Object.assign(new Error("Invalid URL"), { code: "invalid_url" });
-  }
-
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw Object.assign(new Error("Only http and https URLs are allowed"), {
-      code: "invalid_scheme",
-    });
-  }
-
-  const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  if (
-    host === "localhost" ||
-    host.endsWith(".localhost") ||
-    host === "0.0.0.0" ||
-    host === "::1" ||
-    host.endsWith(".local") ||
-    host.endsWith(".internal")
-  ) {
-    throw Object.assign(new Error("Localhost and private hosts are not allowed"), {
-      code: "ssrf_blocked",
-    });
-  }
-
-  // Literal IP in hostname
-  if (net.isIP(host)) {
-    if (isBlockedIp(host)) {
-      throw Object.assign(new Error("Private or reserved IP addresses are not allowed"), {
-        code: "ssrf_blocked",
-      });
-    }
-    return url;
-  }
-
-  let records: Array<{ address: string; family: number }>;
-  try {
-    records = await dns.lookup(host, { all: true, verbatim: true });
-  } catch {
-    throw Object.assign(new Error("Could not resolve hostname"), { code: "dns_failed" });
-  }
-
-  if (!records.length) {
-    throw Object.assign(new Error("Could not resolve hostname"), { code: "dns_failed" });
-  }
-
-  for (const record of records) {
-    if (isBlockedIp(record.address)) {
-      throw Object.assign(new Error("Hostname resolves to a private or reserved address"), {
-        code: "ssrf_blocked",
-      });
-    }
-  }
-
-  return url;
-}
-
 async function readLimitedBody(response: globalThis.Response, maxBytes: number): Promise<string> {
   const contentLength = response.headers.get("content-length");
   if (contentLength && Number(contentLength) > maxBytes) {
@@ -195,8 +116,11 @@ async function readLimitedBody(response: globalThis.Response, maxBytes: number):
 }
 
 export interface FetchMdHandlerOptions {
-  /** Override URL safety checks (tests may allow loopback fixture servers). */
-  assertSafeUrl?: (raw: string) => Promise<URL>;
+  /**
+   * Override URL safety checks (tests may allow loopback fixture servers).
+   * May return `URL` or `SafePublicUrl`.
+   */
+  assertSafeUrl?: (raw: string) => Promise<URL | SafePublicUrl>;
   fetchImpl?: typeof fetch;
   maxBytes?: number;
   timeoutMs?: number;
@@ -204,10 +128,11 @@ export interface FetchMdHandlerOptions {
 
 /**
  * Paid demo: GET /v1/fetch-md?url=… — runs after x402 middleware settles.
- * Fetches a public page and returns Markdown (SSRF-hardened).
+ * Fetches a public page and returns Markdown (SSRF-hardened: scheme allowlist,
+ * private IP deny, DNS re-check before fetch, no redirects).
  */
 export function createFetchMdHandler(options: FetchMdHandlerOptions = {}): RequestHandler {
-  const assertUrl = options.assertSafeUrl ?? assertSafePublicHttpUrl;
+  const assertUrl = options.assertSafeUrl ?? assertSafePublicHttpUrlPinned;
   const fetchImpl = options.fetchImpl ?? fetch;
   const maxBytes = options.maxBytes ?? MAX_BYTES;
   const timeoutMs = options.timeoutMs ?? FETCH_TIMEOUT_MS;
@@ -221,7 +146,8 @@ export function createFetchMdHandler(options: FetchMdHandlerOptions = {}): Reque
 
     let target: URL;
     try {
-      target = await assertUrl(rawUrl);
+      const safe = await assertUrl(rawUrl);
+      target = safe instanceof URL ? safe : safe.url;
     } catch (err) {
       const code =
         err && typeof err === "object" && "code" in err
@@ -236,7 +162,7 @@ export function createFetchMdHandler(options: FetchMdHandlerOptions = {}): Reque
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      // Do not follow redirects — keeps SSRF surface small (no private hop via Location).
+      // Do not follow redirects — blocks private-hop Location rebinding.
       const response = await fetchImpl(target, {
         method: "GET",
         redirect: "error",

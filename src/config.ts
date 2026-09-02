@@ -15,6 +15,13 @@ export type X402Environment = "development" | "production";
 export interface TollgateConfig {
   port: number;
   upstreamUrl: string | undefined;
+  /**
+   * Shared secret for post-payment upstream trust headers
+   * (`UPSTREAM_SHARED_SECRET` or `X402_UPSTREAM_SECRET`).
+   * When set, tollgate injects `X-Tollgate-Secret` / `X-Tollgate-Paid` after settle.
+   * Upstream must require these and reject public direct hits. Not mTLS.
+   */
+  upstreamSharedSecret: string | undefined;
   payTo: `0x${string}` | undefined;
   price: string;
   network: string;
@@ -55,6 +62,16 @@ export interface TollgateConfig {
   paymentDedupeTtlMs: number;
   /** Max fingerprints kept in the in-memory dedupe LRU. */
   paymentDedupeMaxEntries: number;
+  /**
+   * Local / facilitator verify budget (ms). Documented separately from settle;
+   * the gateway settle waiter uses `settleTimeoutMs`.
+   */
+  verifyTimeoutMs: number;
+  /**
+   * Max time to wait for facilitator / on-chain settle before returning
+   * `202 payment_pending` + `retry_with_same_proof` (ms). Default 3 minutes.
+   */
+  settleTimeoutMs: number;
   /**
    * Permissionless seller EOA (env SELLER / X402_SELLER).
    * When set, gated payTo uses resolvePayTo(amount, seller) unless ?merchant= hits the registry.
@@ -171,6 +188,23 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig
       ? Math.floor(dedupeMaxRaw)
       : 10_000;
 
+  const verifyTimeoutRaw = Number(env.X402_VERIFY_TIMEOUT_MS);
+  const verifyTimeoutMs =
+    Number.isFinite(verifyTimeoutRaw) && verifyTimeoutRaw >= 1_000
+      ? Math.floor(verifyTimeoutRaw)
+      : 15_000;
+
+  const settleTimeoutRaw = Number(env.X402_SETTLE_TIMEOUT_MS);
+  const settleTimeoutMs =
+    Number.isFinite(settleTimeoutRaw) && settleTimeoutRaw >= 5_000
+      ? Math.floor(settleTimeoutRaw)
+      : 180_000;
+
+  const upstreamSharedSecret =
+    env.UPSTREAM_SHARED_SECRET?.trim() ||
+    env.X402_UPSTREAM_SECRET?.trim() ||
+    undefined;
+
   const feeFreeBelowUsdc = parseFeeFreeBelow(env.FEE_FREE_BELOW_USDC);
   const factoryRaw = env.FACTORY_ADDRESS?.trim();
   const factoryAddress = factoryRaw ? tryParseAddress(factoryRaw) : undefined;
@@ -183,6 +217,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig
   return {
     port,
     upstreamUrl: env.UPSTREAM_URL?.trim() || undefined,
+    upstreamSharedSecret,
     payTo,
     price: env.PRICE?.trim() || "$0.001",
     network,
@@ -200,6 +235,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig
     requireMerchant,
     paymentDedupeTtlMs,
     paymentDedupeMaxEntries,
+    verifyTimeoutMs,
+    settleTimeoutMs,
     seller,
     feeFreeBelowUsdc,
     factoryAddress,

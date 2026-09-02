@@ -89,13 +89,15 @@ describe("gateway HTTP", () => {
     assert.equal(res.status, 200);
     assert.match(res.headers["content-type"] ?? "", /html/i);
     assert.match(res.text, /x402-micro-tollgate/);
+    assert.match(res.text, /Visa for AI agents/i);
     assert.match(res.text, /pay-per-call/i);
     assert.match(res.text, /Coinbase CDP/);
-    assert.match(res.text, /official SDK/i);
+    assert.match(res.text, /tollbooth/i);
     assert.match(res.text, /mailto:2767111713@qq\.com/);
     assert.doesNotMatch(res.text, /__CONTACT_EMAIL__/);
     assert.doesNotMatch(res.text, /\$9\.90/);
-    assert.doesNotMatch(res.text, /waitlist/i);
+    // Landing says "no hosted SaaS waitlist" — ban signup CTAs, not the word itself.
+    assert.doesNotMatch(res.text, /join (the )?waitlist/i);
     assert.doesNotMatch(res.text, /托管候补/);
   });
 
@@ -111,7 +113,8 @@ describe("gateway HTTP", () => {
     assert.equal(res.status, 200);
     assert.match(res.headers["content-type"] ?? "", /html/i);
     assert.match(res.text, /Coinbase CDP/);
-    assert.match(res.text, /官方 SDK/);
+    assert.match(res.text, /Visa/);
+    assert.match(res.text, /给没法刷卡的 AI Agent/);
   });
 
   it("unpaid gated route returns 402 with default merchant payTo", async () => {
@@ -289,8 +292,8 @@ describe("gateway HTTP", () => {
     const replay = await request(app)
       .get("/v1/quote")
       .set("PAYMENT-SIGNATURE", "demo-settled");
-    assert.equal(replay.status, 400);
-    assert.deepEqual(replay.body, { error: "payment_replay" });
+    assert.equal(replay.status, 409);
+    assert.equal(replay.body.error, "payment_already_used");
 
     // A distinct settled signature still works (demo accepts x-demo-payment).
     const second = await request(app)
