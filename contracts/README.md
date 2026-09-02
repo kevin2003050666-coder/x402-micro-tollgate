@@ -57,7 +57,7 @@ For dry-runs only — not required for production readiness:
    - `feeBps_` — `10`
 4. Register the splitter in the gateway merchant registry (`MERCHANTS_JSON` / `merchants.json`) as that merchant’s `payTo`. Optionally set `X402_PAY_TO` to the default merchant splitter for CDP SDK init (global); per-request `payTo` is rewritten from the registry. Set `NETWORK` to the matching CAIP-2.
 5. Optionally set `FEE_BPS=10` and leave `FEE_COLLECTOR` unset (defaults to the fixed operator `0xa922…7e30E`) for ops clarity. While `X402_PAY_TO` remains an EOA, the node still pays **100%** to that EOA (no fee take) unless the registry advertises a splitter.
-6. After payments accumulate on the splitter, anyone can call `release()`.
+6. After payments accumulate on the splitter, anyone can call `release()` — or run the optional gateway keeper (`KEEPER_ENABLED`, see root README; **off by default**; gas can exceed 0.1% on sub-cent payments).
 
 ## Gateway note
 
