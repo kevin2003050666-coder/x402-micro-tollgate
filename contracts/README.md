@@ -61,4 +61,4 @@ For dry-runs only — not required for production readiness:
 
 ## Gateway note
 
-`FEE_BPS` / `FEE_COLLECTOR` are compile-safe config knobs documented in the root README. They do **not** change the CDP live settle path by themselves — wiring `X402_PAY_TO` to a deployed splitter is the operator switch.
+`FEE_BPS` / `FEE_COLLECTOR` are compile-safe config knobs documented in the root README. Operator `FEE_COLLECTOR` defaults to the fixed Plan A address. They do **not** change the CDP live settle path by themselves — register each merchant’s deployed splitter in `MERCHANTS_JSON` (and optionally set `X402_PAY_TO` for SDK init). Per-request `payTo` is rewritten from the registry.
