@@ -443,6 +443,8 @@ export const FREE_PATHS = new Set([
   "/discover",
   "/llms.txt",
   "/.well-known/llms.txt",
+  "/openapi.yaml",
+  "/docs/openapi.yaml",
 ]);
 
 export function isFreePath(path: string): boolean {

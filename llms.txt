@@ -56,11 +56,10 @@ Expect HTTP 402, header `PAYMENT-REQUIRED`, and a small JSON body (`error`, `pri
 | `GET /health` | free | Service status, network, payTo/seller flags |
 | `GET /x402/discover` | free | Agent-readable catalog (`GET /discover` alias) |
 | `GET /llms.txt` | free | This file (`GET /.well-known/llms.txt` alias) |
+| `GET /openapi.yaml` | free | OpenAPI 3.1 (`GET /docs/openapi.yaml` alias) |
 | `GET /merchants` | free | Merchant registry listing |
 | `GET /v1/*` (and other gated paths) | paid | 402 until `PAYMENT-SIGNATURE` |
 | `/mcp` | free handshake; tools may be paid | Streamable HTTP MCP |
-
-OpenAPI: see `docs/openapi.yaml` in the repository.
 
 ## Package / source
 

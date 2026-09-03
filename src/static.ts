@@ -33,3 +33,15 @@ export function resolveLlmsTxtPath(): string | undefined {
   }
   return undefined;
 }
+
+/**
+ * Resolve `docs/openapi.yaml` for free agent-SEO routes.
+ * Returns undefined when the file is not packaged / not present.
+ */
+export function resolveOpenApiYamlPath(): string | undefined {
+  for (const root of packageRootCandidates()) {
+    const candidate = path.join(root, "docs", "openapi.yaml");
+    if (existsSync(candidate)) return candidate;
+  }
+  return undefined;
+}
