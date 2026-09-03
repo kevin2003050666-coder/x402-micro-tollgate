@@ -189,6 +189,11 @@ export async function runBuyerAgentPoc(
     privateKey: config.privateKey,
     maxSingleSpendUsdc: config.maxSingleUsdc,
     maxTotalSpendUsdc: config.maxTotalUsdc,
+    // PoC demonstrates session B_max; relax per-minute / fingerprint circuit so
+    // the human total budget is the intentional stop (same URL every round).
+    maxPaidRequestsPerMinute: Math.max(config.rounds * 2, 10),
+    maxSpendUsdcPerMinute: Math.max(config.maxTotalUsdc * 10, 1),
+    enableFingerprintBreaker: false,
     fetch: observer.fetch,
   });
 

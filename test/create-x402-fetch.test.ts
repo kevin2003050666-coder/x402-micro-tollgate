@@ -106,10 +106,13 @@ describe("createX402Fetch", () => {
   it("rejects over-budget 402 before signing (no payment retry)", async () => {
     let calls = 0;
     // 1.00 USDC atomic @ 6 decimals = 1_000_000; default maxSingle = 0.05
+    // Raise minute-spend circuit so this test isolates the session budget HALT.
     const fetch402 = createX402Fetch({
       privateKey,
       maxSingleSpendUsdc: 0.05,
       maxTotalSpendUsdc: 1,
+      maxSpendUsdcPerMinute: 2,
+      enableFingerprintBreaker: false,
       fetch: async () => {
         calls += 1;
         return mock402Response("1000000");

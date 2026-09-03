@@ -11,7 +11,7 @@
 
 ## When agents should use it
 
-Use this when an agent (or client) needs to call a paid HTTP API or MCP tool and can settle micropayments on Base (or other configured networks) in USDC. Unpaid gated requests receive HTTP 402 + `PAYMENT-REQUIRED`; paid requests send `PAYMENT-SIGNATURE` and receive the upstream response (plus `PAYMENT-RESPONSE` when settled). Buyer helper: `npm i x402-micro-tollgate@0.3.2` then `import { createX402Fetch } from "x402-micro-tollgate/client"` — auto 402 → budget check → EIP-3009 sign → one `PAYMENT-SIGNATURE` retry.
+Use this when an agent (or client) needs to call a paid HTTP API or MCP tool and can settle micropayments on Base (or other configured networks) in USDC. Unpaid gated requests receive HTTP 402 + `PAYMENT-REQUIRED`; paid requests send `PAYMENT-SIGNATURE` and receive the upstream response (plus `PAYMENT-RESPONSE` when settled). Buyer helper: `npm i x402-micro-tollgate@0.3.2` then `import { createX402Fetch } from "x402-micro-tollgate/client"` — auto 402 → circuit breaker (10 paid/min, 0.05 USDC/min, fingerprint dead-loop) → budget check → EIP-3009 sign → one `PAYMENT-SIGNATURE` retry.
 
 ## Install / run
 

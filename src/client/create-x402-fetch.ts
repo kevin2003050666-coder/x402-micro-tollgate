@@ -8,9 +8,11 @@
  * - Headers: PAYMENT-REQUIRED / PAYMENT-SIGNATURE / PAYMENT-RESPONSE
  * - Max automatic payment retries = 1 (official wrapFetchWithPayment; we do not
  *   register recovery hooks that would authorize a second paid retry)
- * - Budgets enforced BEFORE signing via onBeforePaymentCreation
+ * - Circuit breaker (rate / minute spend / fingerprint) then budgets enforced
+ *   BEFORE signing via selector + onBeforePaymentCreation
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import {
   wrapFetchWithPayment,
   x402Client,
@@ -28,6 +30,14 @@ import {
   type BudgetLimits,
   type BudgetTracker,
 } from "./budget.js";
+import {
+  assertCircuitAllowsPayment,
+  createCircuitBreaker,
+  fingerprintRequest,
+  recordCircuitPayment,
+  resolveRequestParts,
+  type CircuitBreaker,
+} from "./circuit-breaker.js";
 
 /** Hardcoded: never loop payment retries (official client retries once). */
 export const MAX_AUTOMATIC_PAYMENT_RETRIES = 1 as const;
@@ -45,6 +55,21 @@ export type CreateX402FetchOptions = {
   /** Max cumulative USDC across calls on this fetch instance (default 1.00). */
   maxTotalSpendUsdc?: number;
   /**
+   * Max paid 402s in a rolling 60s window (default 10).
+   * Circuit breaker dimension 1 — inspected before budget / sign.
+   */
+  maxPaidRequestsPerMinute?: number;
+  /**
+   * Max USDC paid in a rolling 60s window (default 0.05).
+   * Circuit breaker dimension 2 — inspected before budget / sign.
+   */
+  maxSpendUsdcPerMinute?: number;
+  /**
+   * Halt when the same request fingerprint appears ≥2 prior times in the
+   * rolling window (default true). Circuit breaker dimension 3.
+   */
+  enableFingerprintBreaker?: boolean;
+  /**
    * CAIP-2 networks to register (default `["eip155:*"]`).
    * Pass specific ids (e.g. `eip155:8453`) to restrict.
    */
@@ -57,6 +82,12 @@ export type X402Fetch = (
   input: RequestInfo | URL,
   init?: RequestInit,
 ) => Promise<Response>;
+
+type PayRequestStore = {
+  fingerprint: string;
+};
+
+const payRequestAls = new AsyncLocalStorage<PayRequestStore>();
 
 function resolveAccount(options: CreateX402FetchOptions): ClientEvmSigner {
   if (options.account && options.privateKey) {
@@ -79,12 +110,26 @@ function resolveAccount(options: CreateX402FetchOptions): ClientEvmSigner {
   throw new Error("createX402Fetch: privateKey or account is required");
 }
 
+function currentFingerprint(fallbackUrl?: string): string {
+  const stored = payRequestAls.getStore()?.fingerprint;
+  if (stored) return stored;
+  // Fallback when ALS is missing (should not happen for wrapFetch path).
+  return fingerprintRequest("GET", fallbackUrl ?? "", "");
+}
+
+function resourceUrl(paymentRequired: { resource?: { url?: string } | string }): string | undefined {
+  const resource = paymentRequired.resource;
+  if (typeof resource === "string") return resource;
+  return resource?.url;
+}
+
 /**
- * Prefer the cheapest accept that fits budgets; throw a clear Error if none do.
- * Used as paymentRequirementsSelector so amount is checked before EIP-3009 sign.
+ * Prefer the cheapest accept that fits circuit + budgets; throw a clear Error if none do.
+ * Used as paymentRequirementsSelector so checks run before EIP-3009 sign.
  */
 export function createBudgetSelector(
   tracker: BudgetTracker,
+  circuit?: CircuitBreaker,
 ): SelectPaymentRequirements {
   return (_x402Version, paymentRequirements: PaymentRequirements[]) => {
     if (!paymentRequirements || paymentRequirements.length === 0) {
@@ -101,6 +146,9 @@ export function createBudgetSelector(
 
     let lastSingleError: Error | undefined;
     let lastTotalError: Error | undefined;
+    let lastCircuitError: Error | undefined;
+
+    const fingerprint = currentFingerprint();
 
     for (const req of ranked) {
       let amountUsdc: number;
@@ -112,10 +160,19 @@ export function createBudgetSelector(
         continue;
       }
       try {
+        // Circuit BEFORE budget / sign
+        if (circuit) {
+          assertCircuitAllowsPayment(circuit, fingerprint, amountUsdc);
+        }
         assertWithinBudget(amountUsdc, tracker);
         return req;
       } catch (err) {
         const e = err instanceof Error ? err : new Error(String(err));
+        if (e.message.startsWith("CIRCUIT_BREAKER:")) {
+          lastCircuitError = e;
+          // Circuit halt is global for this pay attempt — do not try other accepts
+          throw e;
+        }
         if (e.message.includes("single payment")) {
           lastSingleError = e;
         } else {
@@ -124,13 +181,19 @@ export function createBudgetSelector(
       }
     }
 
-    throw lastTotalError ?? lastSingleError ?? new Error("x402 budget exceeded");
+    throw (
+      lastCircuitError ??
+      lastTotalError ??
+      lastSingleError ??
+      new Error("x402 budget exceeded")
+    );
   };
 }
 
 /**
  * Create a fetch that auto-handles HTTP 402 once:
- * parse PAYMENT-REQUIRED → budget check → EIP-3009 sign → retry with PAYMENT-SIGNATURE.
+ * parse PAYMENT-REQUIRED → circuit breaker → budget check → EIP-3009 sign →
+ * retry with PAYMENT-SIGNATURE.
  *
  * @example
  * ```ts
@@ -145,13 +208,18 @@ export function createX402Fetch(options: CreateX402FetchOptions): X402Fetch {
     maxSingleSpendUsdc: options.maxSingleSpendUsdc,
     maxTotalSpendUsdc: options.maxTotalSpendUsdc,
   });
+  const circuit = createCircuitBreaker({
+    maxPaidRequestsPerMinute: options.maxPaidRequestsPerMinute,
+    maxSpendUsdcPerMinute: options.maxSpendUsdcPerMinute,
+    enableFingerprintBreaker: options.enableFingerprintBreaker,
+  });
   const networks: Network[] =
     options.networks && options.networks.length > 0
       ? options.networks
       : (["eip155:*"] as Network[]);
   const baseFetch = options.fetch ?? globalThis.fetch.bind(globalThis);
 
-  const selector = createBudgetSelector(tracker);
+  const selector = createBudgetSelector(tracker, circuit);
   const client = new x402Client(selector);
   // Our selector owns clear budget Errors; disable default $1 spendControls.
   client.setSpendControls(false);
@@ -161,10 +229,12 @@ export function createX402Fetch(options: CreateX402FetchOptions): X402Fetch {
     client.register(network, scheme);
   }
 
-  // Belt-and-suspenders: abort before sign if somehow selection raced total.
+  // Belt-and-suspenders: abort before sign if circuit / budget races.
   client.onBeforePaymentCreation(async (ctx) => {
     try {
       const amountUsdc = usdcFromAccept(ctx.selectedRequirements);
+      const fingerprint = currentFingerprint(resourceUrl(ctx.paymentRequired));
+      assertCircuitAllowsPayment(circuit, fingerprint, amountUsdc);
       assertWithinBudget(amountUsdc, tracker);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
@@ -174,6 +244,8 @@ export function createX402Fetch(options: CreateX402FetchOptions): X402Fetch {
 
   client.onAfterPaymentCreation(async (ctx) => {
     const amountUsdc = usdcFromAccept(ctx.selectedRequirements);
+    const fingerprint = currentFingerprint(resourceUrl(ctx.paymentRequired));
+    recordCircuitPayment(circuit, fingerprint, amountUsdc);
     // Selection already checked; record cumulative spend after successful sign.
     recordSpend(tracker, amountUsdc);
   });
@@ -184,7 +256,13 @@ export function createX402Fetch(options: CreateX402FetchOptions): X402Fetch {
   // Official wrapper: initial fetch → on 402 create payment → retry once
   // (MAX_AUTOMATIC_PAYMENT_RETRIES = 1). No onPaymentResponse recovery hooks
   // → no second paid retry.
-  return wrapFetchWithPayment(baseFetch, client);
+  const paidFetch = wrapFetchWithPayment(baseFetch, client);
+
+  return async (input, init) => {
+    const parts = await resolveRequestParts(input, init);
+    const fingerprint = fingerprintRequest(parts.method, parts.url, parts.bodyText);
+    return payRequestAls.run({ fingerprint }, () => paidFetch(input, init));
+  };
 }
 
 /** Test/helper: expose remaining budget on a tracker (not on the fetch itself). */
