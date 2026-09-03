@@ -26,6 +26,16 @@ export {
   type MerchantEntry,
   type MerchantRegistry,
 } from "./merchants.js";
+export {
+  buildDiscoverDocument,
+  resolveDiscoverStatus,
+  DISCOVER_PATH,
+  DISCOVER_ALIAS_PATH,
+  DISCOVER_VERSION,
+  type DiscoverDocument,
+  type DiscoverService,
+  type DiscoverServiceStatus,
+} from "./discover.js";
 export { FEE_SPLITTER_CREATION_BYTECODE } from "./fee-splitter-bytecode.js";
 export {
   SignatureDedupeCache,

@@ -75,6 +75,7 @@ cd x402-micro-tollgate && cp .env.example .env
 # set CDP_API_KEY_ID, CDP_API_KEY_SECRET, X402_PAY_TO (optional: PUBLIC_BASE_URL, UPSTREAM_URL)
 npm i && npm start
 # curl http://127.0.0.1:8402/health   → 200
+# curl http://127.0.0.1:8402/x402/discover → 200 (free agent yellow pages)
 # curl http://127.0.0.1:8402/v1/quote → 402
 # curl "http://127.0.0.1:8402/v1/fetch-md?url=https://example.com" → 402 (paid HTML→Markdown demo)
 ```
@@ -219,12 +220,51 @@ Operator **`FEE_COLLECTOR`** is fixed: `0xa922F38041B5ee227c96A547F106F1330447e3
    ```
 3. Call gated APIs with `?merchant=acme` or header `x-merchant-id: acme` (case-insensitive). **Agents SHOULD always send merchant id.** If omitted, the gateway falls back to `DEFAULT_MERCHANT` (`demo`) — that means traffic (and USDC) can silently land on the demo FeeSplitter. Set `REQUIRE_MERCHANT=true` to reject missing merchant with `400 { "error": "merchant_required" }`. Unknown merchant on gated paths → `400` `{ "error": "unknown_merchant" }`.
 4. Free listing: `GET /merchants` (also `/v1/merchants`).
+5. Agent yellow pages: `GET /x402/discover` (alias `GET /discover`) — stable JSON catalog derived from the same registry / `SELLER` / demo. **JSON config stays supported**; there is no on-chain `Registry.sol` $5 stake in this release.
 
 **Note:** The Base demo splitter has `seller` = `feeCollector` = operator — fine for demo. Real merchants need their own splitter with their wallet as `seller`.
 
 CDP `createX402Server` uses a **single global** `payTo` for SDK init (`X402_PAY_TO` or the default merchant splitter). Per-request merchant routing rewrites `PAYMENT-REQUIRED` `accepts[].payTo` to the resolved FeeSplitter (same pattern as the https `resource.url` rewrite).
 
 If `X402_PAY_TO` is still an EOA and you only have one merchant, behavior stays simple. Multi-merchant production should point each registry `payTo` at a deployed splitter — x402/`exact` credits that splitter via EIP-3009; call `release()` later (manually or via the optional keeper) to send 99.9% / 0.1%. Same contract on **Base / Arbitrum / Polygon** — see the [multi-chain FeeSplitter matrix](./contracts/README.md#multi-chain-usdc-matrix-production). This is **receive → later `release()`**, not an atomic same-transaction split and not OpenZeppelin `PaymentSplitter`.
+
+### Discovery (live) + liquidity roadmap (planned)
+
+**Ship now — Discovery only.** Free route `GET /x402/discover` (alias `/discover`) returns agent-readable yellow pages from **existing** sources (`MERCHANTS_JSON` / merchants file / `SELLER` / built-in demo) + `PUBLIC_BASE_URL`. No 402. Example shape:
+
+```json
+{
+  "version": 1,
+  "network": "eip155:8453",
+  "updatedAt": "2026-09-03T00:00:00.000Z",
+  "source": "merchants",
+  "services": [{
+    "id": "demo",
+    "label": "demo (operator is also seller)",
+    "endpoint": "https://your-host/v1/quote?merchant=demo",
+    "mcp": "https://your-host/mcp",
+    "capabilities": ["quote", "proxy", "fetch-md"],
+    "price": "$0.001",
+    "asset": "USDC",
+    "payTo": "0x…",
+    "seller": "0x…",
+    "status": "demo"
+  }]
+}
+```
+
+`status` is health-honest: `live` only when CDP facilitator credentials + payTo are configured; otherwise `demo` (or `config` when accepts are non-live). This is **not** an on-chain Agent Registry.
+
+**Planned (documented only — do not treat as shipped):**
+
+| Track | Why not now |
+|---|---|
+| **Flash Liquidity Pool** (0-confirm advance across chains) | Capital-intensive: a solo founder cannot hold multi-chain USDC float. 0-confirm advance = **credit risk**. Need a circuit-breaker when the hot wallet balance is insufficient. If Superchain / AggLayer gets sub-second native interoperability, cross-chain friction \(S_{cross}\) → 0 and this track may shrink. |
+| **Reverse Bounty** (pay agents to call) | Sybil drain if the seller subsidizes calls. Require rate-limit / per-agent identity / IP+fingerprint gates **before** any `claimBounty`. The current ~$20 Discord/X bounty stays a **manual operator payout** — not an on-chain claim. |
+
+Full notes: [`docs/ROADMAP-LIQUIDITY.md`](./docs/ROADMAP-LIQUIDITY.md). No `depositBounty` / `claimBounty` on FeeSplitter and no fake “live” cross-chain clearing claims in this release.
+
+> 发现层已上线（`GET /x402/discover`）；闪电流动性池与反向赏金仅为规划，见 roadmap。
 
 ### Gas vs micropayment floor (optional)
 
@@ -361,6 +401,7 @@ Try it: open `https://your-host/v1/quote` in Chrome after configuring the keys a
 Agents / clients
    ├─ HTTP  /v1/*          → x402 402 JSON (agents) or Smart Wallet HTML paywall (browsers)
    ├─ GET   /v1/fetch-md   → paid HTML→Markdown demo (same x402 gate)
+   ├─ GET   /x402/discover → free agent yellow pages (alias /discover; from merchants JSON)
    ├─ POST  /x402/session-token → free Onramp session token (when CDP server keys set)
    ├─ GET   /merchants     → free merchant registry (id, label, seller, payTo)
    ├─ GET   /health        → free (+ paywall config flags)

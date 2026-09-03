@@ -72,6 +72,7 @@ For dry-runs only — not required for production readiness:
 - **USDT** uses Permit2 in x402 accepts (not EIP-3009). Factory live path in this repo is **Base USDC**.
 - **EIP-3009 settle still only credits `payTo`.** Settlement does not invoke splitter logic or the factory; operators must deploy via `getOrCreate` before ≥ $10 settles, then call `release()` later.
 - Do **not** commit private keys. Operator **`feeCollector`** defaults to `0xa922F38041B5ee227c96A547F106F1330447e30E`.
+- **Planned (docs only — not in this Solidity tree):** on-chain Agent Registry ($5 stake), Flash Liquidity Pool (0-confirm cross-chain advance), Reverse Bounty (`depositBounty` / `claimBounty`). Discovery today is off-chain JSON via `GET /x402/discover`. See [`docs/ROADMAP-LIQUIDITY.md`](../docs/ROADMAP-LIQUIDITY.md).
 
 ## Deploy (Remix) — operator steps
 

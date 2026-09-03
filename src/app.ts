@@ -12,6 +12,11 @@ import { mountMcpTransports } from "./mcp/http.js";
 import type { McpPaymentLayer } from "./mcp/payment.js";
 import { resolvePublicDir } from "./static.js";
 import { listMerchantsPublic } from "./merchants.js";
+import {
+  buildDiscoverDocument,
+  DISCOVER_ALIAS_PATH,
+  DISCOVER_PATH,
+} from "./discover.js";
 import { createSessionTokenHandler } from "./session-token.js";
 import { SESSION_TOKEN_PATH } from "./paywall.js";
 import {
@@ -160,6 +165,14 @@ export async function createApp(options: AppOptions = {}): Promise<CreatedApp> {
   };
   app.get("/merchants", sendMerchants);
   app.get("/v1/merchants", sendMerchants);
+
+  // Agent-readable discovery yellow pages (free, no 402). From merchants / SELLER / demo only.
+  // Not an on-chain Registry.sol stake catalog — see docs/ROADMAP-LIQUIDITY.md.
+  const sendDiscover = (_req: Request, res: Response) => {
+    res.status(200).json(buildDiscoverDocument(config));
+  };
+  app.get(DISCOVER_PATH, sendDiscover);
+  app.get(DISCOVER_ALIAS_PATH, sendDiscover);
 
   // Coinbase Onramp session token (optional — 503 when CDP server keys missing).
   // Free path: must stay before payment middleware. Never exposes wallet secrets.

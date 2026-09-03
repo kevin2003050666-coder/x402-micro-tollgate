@@ -28,6 +28,7 @@ async function main(): Promise<void> {
           ? { enabled: true, dryRun: keeperConfig.dryRun, intervalMs: keeperConfig.intervalMs }
           : { enabled: false },
         health: `http://127.0.0.1:${config.port}/health`,
+        discover: `http://127.0.0.1:${config.port}/x402/discover`,
         mcp: `http://127.0.0.1:${config.port}/mcp`,
         sse: `http://127.0.0.1:${config.port}/sse`,
       }),

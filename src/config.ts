@@ -427,6 +427,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): TollgateConfig
 /**
  * Free HTTP paths that never require x402 payment (MCP has its own payment loop).
  * `/merchants` and `/v1/merchants` are free registry listing endpoints.
+ * `/x402/discover` (+ `/discover` alias) is the agent-readable yellow pages catalog.
  */
 export const FREE_PATHS = new Set([
   "/",
@@ -438,6 +439,8 @@ export const FREE_PATHS = new Set([
   "/merchants",
   "/v1/merchants",
   "/x402/session-token",
+  "/x402/discover",
+  "/discover",
 ]);
 
 export function isFreePath(path: string): boolean {
