@@ -135,6 +135,8 @@ Or set `SELLER` / `X402_SELLER` in `.env` and run `npm start`. See [Environment]
 
 Uses [`render.yaml`](./render.yaml): Node 22, `npm start`, health `/health`, env names from [`.env.example`](./.env.example). Set `CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`, and `X402_PAY_TO` in the dashboard for live settlement; set `PUBLIC_BASE_URL` to your `https://….onrender.com` origin for Bazaar.
 
+Ops bump: **redeploy discover** (force Render GitHub auto-deploy so production picks up `GET /x402/discover`). If auto-deploy does not fire within a few minutes after this lands on `main`, use the Render dashboard → Manual Deploy → Deploy latest commit.
+
 **Self-host production:** Docker — `docker compose up --build` (see [`Dockerfile`](./Dockerfile) / [`docker-compose.yml`](./docker-compose.yml)).
 
 ---
