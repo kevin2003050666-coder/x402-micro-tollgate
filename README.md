@@ -83,8 +83,8 @@ npm i && npm start
 **npx one-liners** (no clone):
 
 ```bash
-npx x402-micro-tollgate@0.3.1
-npx x402-micro-tollgate@0.3.1 --seller 0xYourReceivingAddress --stdio
+npx x402-micro-tollgate@0.3.2
+npx x402-micro-tollgate@0.3.2 --seller 0xYourReceivingAddress --stdio
 ```
 
 `--seller` / `-s` sets `X402_PAY_TO` before boot (env vars still work). Default without `--stdio` is HTTP + `/mcp` on port 8402.
@@ -115,7 +115,7 @@ Stdio:
     "x402-micro-tollgate": {
       "command": "npx",
       "args": [
-        "x402-micro-tollgate@0.3.1",
+        "x402-micro-tollgate@0.3.2",
         "--seller",
         "0xYourReceivingAddress",
         "--stdio"
@@ -147,6 +147,10 @@ Or set `SELLER` / `X402_SELLER` in `.env` and run `npm start`. See [Environment]
 ### Buyer / Agent client
 
 Thin TypeScript helper that wraps official `@x402/fetch` + `@x402/evm` `ExactEvmScheme`. On HTTP 402 it parses `PAYMENT-REQUIRED`, checks budgets, signs EIP-3009 once, and retries **once** with `PAYMENT-SIGNATURE` (never loops).
+
+```bash
+npm i x402-micro-tollgate@0.3.2
+```
 
 ```ts
 import { createX402Fetch } from "x402-micro-tollgate/client";
@@ -447,7 +451,7 @@ Agents / clients
 | HTTP | `createX402Server` + `paymentMiddlewareFromHTTPServer` + `@x402/paywall` (browser) |
 | MCP | `x402ResourceServer` + `createCdpFacilitatorClient` + `createPaymentWrapper` + Bazaar extension |
 
-CLI: `npx x402-micro-tollgate@0.3.1` | `--seller 0x…` / `-s` | `--stdio` | `--port N`
+CLI: `npx x402-micro-tollgate@0.3.2` | `--seller 0x…` / `-s` | `--stdio` | `--port N`
 
 Agent SEO: [`llms.txt`](./llms.txt) · [`docs/openapi.yaml`](./docs/openapi.yaml)
 

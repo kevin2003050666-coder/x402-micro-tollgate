@@ -59,7 +59,7 @@ describe("llms.txt + OpenAPI SEO surfaces", () => {
     assert.equal(a.status, 200);
     assert.equal(b.status, 200);
     assert.match(String(a.headers["content-type"]), /text\/plain/);
-    assert.match(a.text, /npx x402-micro-tollgate@0\.3\.1 --seller/);
+    assert.match(a.text, /npx x402-micro-tollgate@0\.3\.2 --seller/);
     assert.match(a.text, /GET \/openapi\.yaml/);
     assert.equal(a.text, b.text);
   });
