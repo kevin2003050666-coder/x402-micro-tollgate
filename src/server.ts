@@ -12,7 +12,8 @@ async function main(): Promise<void> {
   const keeper = startFeeSplitterKeeper(keeperConfig);
 
   app.listen(config.port, () => {
-    console.log(
+    // Operational banners must go to stderr so MCP stdio stdout stays JSON-RPC only.
+    console.error(
       JSON.stringify({
         msg: "x402-micro-tollgate listening",
         port: config.port,
@@ -35,7 +36,7 @@ async function main(): Promise<void> {
     );
 
     if (payment.mode === "demo" || mcpPayment?.mode === "demo") {
-      console.log(
+      console.error(
         JSON.stringify({
           msg: "Running in demo mode (no CDP facilitator). HTTP gated routes and MCP paid tools still return PaymentRequired. Set CDP_API_KEY_ID, CDP_API_KEY_SECRET, and X402_PAY_TO for live settlement.",
         }),

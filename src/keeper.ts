@@ -161,7 +161,8 @@ export interface KeeperLogger {
 }
 
 const defaultLogger: KeeperLogger = {
-  info: (msg) => console.log(JSON.stringify(msg)),
+  // Keep stdout free for MCP JSON-RPC when keeper runs alongside stdio/HTTP boot.
+  info: (msg) => console.error(JSON.stringify(msg)),
   error: (msg) => console.error(JSON.stringify(msg)),
 };
 
