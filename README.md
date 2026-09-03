@@ -144,6 +144,18 @@ app.use("/v1", await x402Tollgate({ seller: process.env.SELLER! }));
 
 Or set `SELLER` / `X402_SELLER` in `.env` and run `npm start`. See [Environment](#environment) for the $10 threshold, factory address, and fee-release details.
 
+### Buyer / Agent client
+
+Thin TypeScript helper that wraps official `@x402/fetch` + `@x402/evm` `ExactEvmScheme`. On HTTP 402 it parses `PAYMENT-REQUIRED`, checks budgets, signs EIP-3009 once, and retries **once** with `PAYMENT-SIGNATURE` (never loops).
+
+```ts
+import { createX402Fetch } from "x402-micro-tollgate/client";
+const fetch402 = createX402Fetch({ privateKey: process.env.BUYER_KEY as `0x${string}` });
+const res = await fetch402("https://x402-micro-tollgate.onrender.com/v1/quote");
+```
+
+Defaults: `maxSingleSpendUsdc = 0.05`, `maxTotalSpendUsdc = 1.00` (clear `Error` if exceeded). **Hot-wallet warning:** keep only ~**$5–$10 USDC** on the signing key — treat it as an agent spend faucet, not a treasury.
+
 ---
 
 ## Deploy
