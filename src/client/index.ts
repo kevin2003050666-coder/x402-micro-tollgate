@@ -26,3 +26,23 @@ export {
   type BudgetLimits,
   type BudgetTracker,
 } from "./budget.js";
+
+export {
+  createCircuitBreaker,
+  assertCircuitAllowsPayment,
+  recordCircuitPayment,
+  pruneCircuitBreaker,
+  fingerprintRequest,
+  sanitizeBodyForFingerprint,
+  stripDynamicKeys,
+  resolveRequestParts,
+  bodyInitToString,
+  CIRCUIT_BREAKER_WINDOW_MS,
+  DEFAULT_MAX_PAID_REQUESTS_PER_MINUTE,
+  DEFAULT_MAX_SPEND_USDC_PER_MINUTE,
+  FINGERPRINT_BODY_MAX_CHARS,
+  type CircuitBreaker,
+  type CircuitBreakerLimits,
+  type CircuitBreakerConfig,
+  type CircuitBreakerEvent,
+} from "./circuit-breaker.js";

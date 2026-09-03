@@ -158,7 +158,7 @@ const fetch402 = createX402Fetch({ privateKey: process.env.BUYER_KEY as `0x${str
 const res = await fetch402("https://x402-micro-tollgate.onrender.com/v1/quote");
 ```
 
-Defaults: `maxSingleSpendUsdc = 0.05`, `maxTotalSpendUsdc = 1.00` (clear `Error` if exceeded). **Hot-wallet warning:** keep only ~**$5–$10 USDC** on the signing key — treat it as an agent spend faucet, not a treasury.
+Defaults: `maxSingleSpendUsdc = 0.05`, `maxTotalSpendUsdc = 1.00` (clear `Error` if exceeded). Circuit breaker (before sign): max **10** paid 402s / **0.05 USDC** per rolling 60s, plus fingerprint dead-loop halt (`maxPaidRequestsPerMinute`, `maxSpendUsdcPerMinute`, `enableFingerprintBreaker`). **Hot-wallet warning:** keep only ~**$5–$10 USDC** on the signing key — treat it as an agent spend faucet, not a treasury.
 
 ### Human-delegated agent credit (CLI)
 
