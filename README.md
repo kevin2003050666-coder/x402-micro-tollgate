@@ -16,6 +16,7 @@ Self-host is free ([MIT](./LICENSE)). Repo: [github.com/kevin2003050666-coder/x4
 
 > Not an official Coinbase product. Not a full agent marketplace. Not a billing SaaS. A sharp Visa-style tollbooth. Not fiat custody.
 
+> Why this exists: [MANIFESTO.md](./MANIFESTO.md) — pain, engineering, on-chain proof, MIT.
 ## Network × asset matrix
 
 Default deploy profile: **Base USDC only** (dev: Base Sepolia). Enable multi with `NETWORKS` + `ASSETS` or `ACCEPTS_JSON` / `X402_*` aliases. Browser HTML 402 shows a **chain + asset picker** when more than one accept is configured.
