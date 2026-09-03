@@ -39,6 +39,7 @@
     "dev": "tsx watch src/cli.ts",
     "test": "tsx --test test/**/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "poc:buyer-agent": "tsx scripts/buyer-agent-poc.ts",
     "generate:feesplitter-bytecode": "node scripts/generate-feesplitter-bytecode.mjs"
   },
   "engines": {

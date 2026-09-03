@@ -160,6 +160,28 @@ const res = await fetch402("https://x402-micro-tollgate.onrender.com/v1/quote");
 
 Defaults: `maxSingleSpendUsdc = 0.05`, `maxTotalSpendUsdc = 1.00` (clear `Error` if exceeded). **Hot-wallet warning:** keep only ~**$5–$10 USDC** on the signing key — treat it as an agent spend faucet, not a treasury.
 
+### Human-delegated agent credit (CLI)
+
+Thin PoC: **Human sets `B_max`** → **Agent** loops `createX402Fetch` against a paid URL (auto 402 → pay once → retry). Chrome / Telegram / Session Key / Passkey UI are deferred.
+
+```bash
+# SAFETY: fund BUYER_PRIVATE_KEY with ≤ $5–$10 USDC only. Never commit keys.
+export BUYER_PRIVATE_KEY=0xYourHotWalletKey
+# optional: TARGET_URL MAX_SINGLE_USDC MAX_TOTAL_USDC ROUNDS
+npm run poc:buyer-agent
+# or: npx tsx scripts/buyer-agent-poc.ts
+```
+
+| Env | Default | Notes |
+|---|---|---|
+| `BUYER_PRIVATE_KEY` | _(required)_ | `0x…` EOA used to sign EIP-3009 |
+| `TARGET_URL` | `https://x402-micro-tollgate.onrender.com/v1/quote` | Paid route to hit |
+| `MAX_SINGLE_USDC` | `0.05` | Per-call cap (`maxSingleSpendUsdc`) |
+| `MAX_TOTAL_USDC` | `1.00` | Session cap / human `B_max` |
+| `ROUNDS` | `3` | Stop after N calls or when budget exhausted |
+
+The script imports the **local** client (`../src/client`) so repo CI does not need a live chain pay. For a live demo against the published package, swap the import to `x402-micro-tollgate/client` (same API as `0.3.2+`). Each round prints `status`, `autoPaid`, and `sessionSpendUsdc` on stdout; the safety banner goes to stderr.
+
 ---
 
 ## Deploy
