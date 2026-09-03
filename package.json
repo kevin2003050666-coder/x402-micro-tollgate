@@ -20,6 +20,8 @@
     "dist",
     "public",
     "contracts",
+    "docs/openapi.yaml",
+    "llms.txt",
     "server.json",
     "merchants.example.json",
     "LICENSE",

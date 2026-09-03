@@ -33,6 +33,14 @@ describe("MCP stdio stdout hygiene", () => {
     assert.match(src, /MCP stdio ready/);
   });
 
+  it("CLI applies --seller before dynamic import (no early stdout banners)", () => {
+    const src = readSrc("src/cli.ts");
+    assert.match(src, /--seller/);
+    assert.match(src, /applyCliEnv/);
+    assert.match(src, /await import\("\.\/mcp-stdio\.js"\)/);
+    assert.match(src, /await import\("\.\/server\.js"\)/);
+  });
+
   it("keeper default info logger uses stderr", () => {
     const src = readSrc("src/keeper.ts");
     assert.match(

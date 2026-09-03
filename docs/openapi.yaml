@@ -1,0 +1,421 @@
+openapi: 3.1.0
+info:
+  title: x402-micro-tollgate
+  version: 0.3.0
+  summary: Thin x402 payment gateway + MCP server
+  description: |
+    Self-hosted HTTP gateway that gates routes with HTTP 402 / x402 micropayments
+    (default Base USDC via Coinbase CDP + EIP-3009) and exposes an MCP endpoint.
+
+    Payment headers used by this gateway (do not invent alternate names):
+    - Request: `PAYMENT-SIGNATURE` (also `payment-signature`), optional `x-demo-payment`,
+      optional `x-merchant-id`
+    - Response: `PAYMENT-REQUIRED` on unpaid 402; `PAYMENT-RESPONSE` after settle / demo accept
+
+    Free discovery: `/health`, `/x402/discover`, `/llms.txt`, `/merchants`.
+    Gated by default under `GATED_PREFIX` (default `/v1`).
+  license:
+    name: MIT
+  contact:
+    email: 2767111713@qq.com
+
+servers:
+  - url: https://x402-micro-tollgate.onrender.com
+    description: Public demo (Render)
+  - url: http://127.0.0.1:8402
+    description: Local default
+
+tags:
+  - name: free
+    description: Unauthenticated discovery / health
+  - name: paid
+    description: Routes behind the x402 gate (HTTP 402 until paid)
+  - name: mcp
+    description: Model Context Protocol HTTP transport
+
+paths:
+  /health:
+    get:
+      tags: [free]
+      summary: Liveness and config snapshot
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+
+  /x402/discover:
+    get:
+      tags: [free]
+      summary: Agent-readable yellow pages catalog
+      operationId: getDiscover
+      responses:
+        "200":
+          description: Discovery document (from merchants / SELLER / demo config)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscoverDocument"
+
+  /discover:
+    get:
+      tags: [free]
+      summary: Alias of /x402/discover
+      operationId: getDiscoverAlias
+      responses:
+        "200":
+          description: Same payload as /x402/discover
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscoverDocument"
+
+  /llms.txt:
+    get:
+      tags: [free]
+      summary: AI crawler plain-text summary
+      operationId: getLlmsTxt
+      responses:
+        "200":
+          description: Plain-text llms.txt
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /.well-known/llms.txt:
+    get:
+      tags: [free]
+      summary: Well-known alias of /llms.txt
+      operationId: getWellKnownLlmsTxt
+      responses:
+        "200":
+          description: Same body as /llms.txt
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /merchants:
+    get:
+      tags: [free]
+      summary: Public merchant registry listing
+      operationId: getMerchants
+      responses:
+        "200":
+          description: Merchants without secrets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MerchantsList"
+
+  /v1/merchants:
+    get:
+      tags: [free]
+      summary: Alias of /merchants under gated prefix (still free)
+      operationId: getV1Merchants
+      responses:
+        "200":
+          description: Same as /merchants
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MerchantsList"
+
+  /v1/quote:
+    get:
+      tags: [paid]
+      summary: Sample paid quote (mock or upstream)
+      description: |
+        Unpaid agent clients receive HTTP 402 + `PAYMENT-REQUIRED` and a small JSON body.
+        After settlement, send the same request with `PAYMENT-SIGNATURE`.
+      operationId: getV1Quote
+      parameters:
+        - $ref: "#/components/parameters/MerchantQuery"
+        - $ref: "#/components/parameters/MerchantHeader"
+        - $ref: "#/components/parameters/PaymentSignature"
+        - $ref: "#/components/parameters/DemoPayment"
+      responses:
+        "200":
+          description: Paid — quote JSON from upstream or built-in mock
+          headers:
+            PAYMENT-RESPONSE:
+              $ref: "#/components/headers/PaymentResponse"
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "402":
+          $ref: "#/components/responses/PaymentRequired"
+
+  /v1/fetch-md:
+    get:
+      tags: [paid]
+      summary: Paid HTML→Markdown fetch demo
+      operationId: getV1FetchMd
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uri
+          description: Public http(s) URL to fetch
+        - $ref: "#/components/parameters/MerchantQuery"
+        - $ref: "#/components/parameters/MerchantHeader"
+        - $ref: "#/components/parameters/PaymentSignature"
+        - $ref: "#/components/parameters/DemoPayment"
+      responses:
+        "200":
+          description: Paid — Markdown payload
+          headers:
+            PAYMENT-RESPONSE:
+              $ref: "#/components/headers/PaymentResponse"
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "402":
+          $ref: "#/components/responses/PaymentRequired"
+
+  /v1/{path}:
+    parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Upstream path under GATED_PREFIX (default /v1)
+      - $ref: "#/components/parameters/MerchantQuery"
+      - $ref: "#/components/parameters/MerchantHeader"
+      - $ref: "#/components/parameters/PaymentSignature"
+      - $ref: "#/components/parameters/DemoPayment"
+    get:
+      tags: [paid]
+      summary: Paid reverse-proxy (GET)
+      operationId: proxyV1Get
+      responses:
+        "200":
+          description: Paid — proxied upstream response
+          headers:
+            PAYMENT-RESPONSE:
+              $ref: "#/components/headers/PaymentResponse"
+        "402":
+          $ref: "#/components/responses/PaymentRequired"
+    post:
+      tags: [paid]
+      summary: Paid reverse-proxy (POST)
+      operationId: proxyV1Post
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: Paid — proxied upstream response
+          headers:
+            PAYMENT-RESPONSE:
+              $ref: "#/components/headers/PaymentResponse"
+        "402":
+          $ref: "#/components/responses/PaymentRequired"
+
+  /mcp:
+    post:
+      tags: [mcp]
+      summary: Streamable HTTP MCP transport
+      description: |
+        Free path for MCP session handshake / server_info. Individual MCP tools
+        (e.g. get_quote, proxy_request) may require x402 payment inside the MCP
+        payment wrapper. Prefer Cursor/Claude MCP clients over raw curl.
+      operationId: postMcp
+      responses:
+        "200":
+          description: MCP JSON-RPC / SSE stream response
+        "400":
+          description: Malformed MCP request
+
+components:
+  parameters:
+    MerchantQuery:
+      name: merchant
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Merchant id from the registry (alternative to x-merchant-id)
+    MerchantHeader:
+      name: x-merchant-id
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Merchant id header (case-insensitive)
+    PaymentSignature:
+      name: PAYMENT-SIGNATURE
+      in: header
+      required: false
+      schema:
+        type: string
+      description: |
+        x402 payment proof. Gateway also accepts lowercase `payment-signature`.
+        Required to unlock gated routes in live mode.
+    DemoPayment:
+      name: x-demo-payment
+      in: header
+      required: false
+      schema:
+        type: string
+        enum: [settled]
+      description: Demo-mode only bypass (`settled`). No on-chain settle.
+
+  headers:
+    PaymentRequired:
+      description: Encoded x402 PaymentRequired payload (Base64 / protocol encoding via @x402/core)
+      schema:
+        type: string
+    PaymentResponse:
+      description: Settlement or demo receipt (Base64 JSON in demo mode)
+      schema:
+        type: string
+
+  responses:
+    PaymentRequired:
+      description: |
+        Unpaid gated request. Protocol offer is in the `PAYMENT-REQUIRED` header.
+        JSON body is a small human-readable summary (not the full accepts list).
+      headers:
+        PAYMENT-REQUIRED:
+          $ref: "#/components/headers/PaymentRequired"
+        Cache-Control:
+          schema:
+            type: string
+            example: no-store
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PaymentRequiredBody"
+
+  schemas:
+    Health:
+      type: object
+      required: [status, service]
+      properties:
+        status:
+          type: string
+          example: ok
+        service:
+          type: string
+          example: x402-micro-tollgate
+        mode:
+          type: string
+          description: Payment layer mode (live / demo)
+        network:
+          type: string
+          example: eip155:8453
+        price:
+          type: string
+          example: "$0.001"
+        payTo:
+          type: ["string", "null"]
+        seller:
+          type: ["string", "null"]
+        publicBaseUrl:
+          type: string
+        mcp:
+          type: object
+          properties:
+            streamableHttp:
+              type: string
+              example: /mcp
+            sse:
+              type: string
+              example: /sse
+      additionalProperties: true
+
+    DiscoverDocument:
+      type: object
+      required: [version, network, updatedAt, source, services]
+      properties:
+        version:
+          type: integer
+          example: 1
+        network:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+        source:
+          type: string
+          enum: [merchants, seller, mixed]
+        services:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiscoverService"
+
+    DiscoverService:
+      type: object
+      required:
+        [id, label, endpoint, mcp, capabilities, price, asset, payTo, seller, status]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        endpoint:
+          type: string
+          format: uri
+        mcp:
+          type: string
+          format: uri
+        capabilities:
+          type: array
+          items:
+            type: string
+        price:
+          type: string
+        asset:
+          type: string
+        payTo:
+          type: string
+        seller:
+          type: string
+        status:
+          type: string
+          enum: [live, demo, config]
+
+    MerchantsList:
+      type: object
+      properties:
+        feeCollector:
+          type: string
+        defaultMerchant:
+          type: string
+        merchants:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+
+    PaymentRequiredBody:
+      type: object
+      required: [error, price, doc, message]
+      properties:
+        error:
+          type: string
+          example: Payment Required
+        price:
+          type: string
+          example: "$0.001 USDC"
+        doc:
+          type: string
+          format: uri
+        message:
+          type: string

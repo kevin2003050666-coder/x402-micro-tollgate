@@ -1,0 +1,84 @@
+# x402-micro-tollgate
+
+> Thin self-hosted x402 payment gateway + MCP server. Charge AI agents USDC per HTTP route or MCP tool call.
+
+## What it is
+
+- HTTP reverse-proxy / paid API gate that returns **HTTP 402** with an x402 price tag when unpaid
+- Default settlement: **Base USDC** via **Coinbase CDP** facilitator using **EIP-3009** (`TransferWithAuthorization`)
+- Also exposes an MCP server (`/mcp` over HTTP, or `--stdio`) with paid tools
+- Self-host MIT; not an official Coinbase product; not a billing SaaS
+
+## When agents should use it
+
+Use this when an agent (or client) needs to call a paid HTTP API or MCP tool and can settle micropayments on Base (or other configured networks) in USDC. Unpaid gated requests receive HTTP 402 + `PAYMENT-REQUIRED`; paid requests send `PAYMENT-SIGNATURE` and receive the upstream response (plus `PAYMENT-RESPONSE` when settled).
+
+## Install / run
+
+HTTP gateway (default port 8402):
+
+```bash
+npx x402-micro-tollgate@0.3.0
+```
+
+Stdio MCP with seller wallet (sets `X402_PAY_TO`):
+
+```bash
+npx x402-micro-tollgate@0.3.0 --seller 0xYourReceivingAddress --stdio
+```
+
+Equivalent env (still supported):
+
+```bash
+X402_PAY_TO=0xYourReceivingAddress npx x402-micro-tollgate@0.3.0 --stdio
+```
+
+Live CDP settlement also needs `CDP_API_KEY_ID` and `CDP_API_KEY_SECRET`. Without CDP keys the process runs in demo mode (protocol-shaped 402 / MCP PaymentRequired, no on-chain settle).
+
+## Live demo
+
+- Origin: https://x402-micro-tollgate.onrender.com
+- Health: `GET https://x402-micro-tollgate.onrender.com/health`
+- Discover (free yellow pages): `GET https://x402-micro-tollgate.onrender.com/x402/discover`
+- MCP: `POST https://x402-micro-tollgate.onrender.com/mcp`
+- Expect 402 (unpaid gated quote):
+
+```bash
+curl -i https://x402-micro-tollgate.onrender.com/v1/quote
+```
+
+Expect HTTP 402, header `PAYMENT-REQUIRED`, and a small JSON body (`error`, `price`, `doc`, `message`).
+
+## Discovery surfaces
+
+| Path | Auth | Notes |
+|---|---|---|
+| `GET /health` | free | Service status, network, payTo/seller flags |
+| `GET /x402/discover` | free | Agent-readable catalog (`GET /discover` alias) |
+| `GET /llms.txt` | free | This file (`GET /.well-known/llms.txt` alias) |
+| `GET /merchants` | free | Merchant registry listing |
+| `GET /v1/*` (and other gated paths) | paid | 402 until `PAYMENT-SIGNATURE` |
+| `/mcp` | free handshake; tools may be paid | Streamable HTTP MCP |
+
+OpenAPI: see `docs/openapi.yaml` in the repository.
+
+## Package / source
+
+- npm: https://www.npmjs.com/package/x402-micro-tollgate
+- GitHub: https://github.com/kevin2003050666-coder/x402-micro-tollgate
+- Contact: 2767111713@qq.com
+
+## Payment headers (exact names used by this gateway)
+
+Request (buyer → gateway):
+
+- `PAYMENT-SIGNATURE` (also accepted lowercase `payment-signature`) — x402 payment proof
+- `x-demo-payment: settled` — demo-mode bypass only (no on-chain settle)
+- `x-merchant-id` — optional multi-tenant merchant selector (or `?merchant=`)
+
+Response (gateway → buyer):
+
+- `PAYMENT-REQUIRED` — encoded x402 offer on unpaid 402
+- `PAYMENT-RESPONSE` — settlement / demo receipt after accept
+
+Do not invent alternate payment header names — this codebase uses the `PAYMENT-*` header family above.
