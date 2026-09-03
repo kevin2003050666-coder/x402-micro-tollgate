@@ -18,19 +18,19 @@ Use this when an agent (or client) needs to call a paid HTTP API or MCP tool and
 HTTP gateway (default port 8402):
 
 ```bash
-npx x402-micro-tollgate@0.3.0
+npx x402-micro-tollgate@0.3.1
 ```
 
 Stdio MCP with seller wallet (sets `X402_PAY_TO`):
 
 ```bash
-npx x402-micro-tollgate@0.3.0 --seller 0xYourReceivingAddress --stdio
+npx x402-micro-tollgate@0.3.1 --seller 0xYourReceivingAddress --stdio
 ```
 
 Equivalent env (still supported):
 
 ```bash
-X402_PAY_TO=0xYourReceivingAddress npx x402-micro-tollgate@0.3.0 --stdio
+X402_PAY_TO=0xYourReceivingAddress npx x402-micro-tollgate@0.3.1 --stdio
 ```
 
 Live CDP settlement also needs `CDP_API_KEY_ID` and `CDP_API_KEY_SECRET`. Without CDP keys the process runs in demo mode (protocol-shaped 402 / MCP PaymentRequired, no on-chain settle).

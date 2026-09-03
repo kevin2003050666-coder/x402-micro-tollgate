@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: x402-micro-tollgate
-  version: 0.3.0
+  version: 0.3.1
   summary: Thin x402 payment gateway + MCP server
   description: |
     Self-hosted HTTP gateway that gates routes with HTTP 402 / x402 micropayments
