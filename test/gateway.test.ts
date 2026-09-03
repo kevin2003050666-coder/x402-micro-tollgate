@@ -77,6 +77,24 @@ describe("gateway HTTP", () => {
     assert.ok(Array.isArray(underV1.body.merchants));
   });
 
+  it("GET /x402/discover is free yellow pages", async () => {
+    const config = loadConfig({
+      PUBLIC_BASE_URL: "https://tollgate.example.com",
+    });
+    const { app } = await createApp({
+      config,
+      paymentLayer: createDemoPaymentLayer(config),
+      disableMcp: true,
+    });
+
+    const res = await request(app).get("/x402/discover");
+    assert.equal(res.status, 200);
+    assert.equal(res.body.version, 1);
+    assert.ok(Array.isArray(res.body.services));
+    assert.ok(res.body.services.some((s: { id: string }) => s.id === "demo"));
+    assert.match(res.text, /quote/);
+  });
+
   it("GET / landing is free HTML", async () => {
     const config = loadConfig({});
     const { app } = await createApp({

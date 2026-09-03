@@ -362,6 +362,7 @@
 docker compose up</pre>
         </div>
         <p class="sub" style="margin-top:1rem" data-i18n="self_env">For live settlement set CDP_API_KEY_ID, CDP_API_KEY_SECRET, and X402_PAY_TO. Optional: UPSTREAM_URL, PRICE.</p>
+        <p class="sub" style="margin-top:0.75rem" data-i18n="self_discover">Agents: free yellow pages at /x402/discover (no 402) — merchants from JSON config, not an on-chain registry.</p>
       </section>
 
       <section id="cursor">
@@ -400,6 +401,7 @@ docker compose up</pre>
       </div>
       <div>
         <a href="/health">/health</a>
+        · <a href="/x402/discover">/x402/discover</a>
         · <a href="/mcp">/mcp</a>
         · <a href="https://github.com/kevin2003050666-coder/x402-micro-tollgate">GitHub</a>
         · <a href="https://docs.cdp.coinbase.com/x402/quickstart-for-sellers">x402 docs</a>
@@ -442,6 +444,7 @@ docker compose up</pre>
         self_title: "Try the demo (self-host)",
         self_sub: "MIT open source. One process: HTTP tollgate + MCP. Point it at your API and open the gate.",
         self_env: "For live settlement set CDP_API_KEY_ID, CDP_API_KEY_SECRET, and X402_PAY_TO. Optional: UPSTREAM_URL, PRICE.",
+        self_discover: "Agents: free yellow pages at /x402/discover (no 402) — merchants from JSON config, not an on-chain registry.",
         cursor_title: "Cursor config",
         cursor_sub: "After you expose the server (local or public), paste this into mcp.json.",
         contact_title: "Contact",
@@ -482,6 +485,7 @@ docker compose up</pre>
         self_title: "试用（自托管）",
         self_sub: "MIT 开源。单进程：HTTP 收费站 + MCP。指向你的 API，打开闸门。",
         self_env: "线上结算需设置 CDP_API_KEY_ID、CDP_API_KEY_SECRET、X402_PAY_TO。可选：UPSTREAM_URL、PRICE。",
+        self_discover: "Agent：免费黄页 /x402/discover（不收 402）——来自 JSON 商户配置，不是链上 Registry。",
         cursor_title: "Cursor 配置",
         cursor_sub: "服务暴露后（本地或公网），粘贴到 mcp.json。",
         contact_title: "联系",
