@@ -104,12 +104,16 @@ describe("config", () => {
     assert.equal(isFreePath("/x402/session-token"), true);
     assert.equal(isFreePath("/x402/discover"), true);
     assert.equal(isFreePath("/discover"), true);
+    assert.equal(isFreePath("/llms.txt"), true);
+    assert.equal(isFreePath("/.well-known/llms.txt"), true);
     assert.equal(isGatedPath("/health", "/v1"), false);
     assert.equal(isGatedPath("/merchants", "/v1"), false);
     assert.equal(isGatedPath("/v1/merchants", "/v1"), false);
     assert.equal(isGatedPath("/x402/session-token", "/v1"), false);
     assert.equal(isGatedPath("/x402/discover", "/v1"), false);
     assert.equal(isGatedPath("/discover", "/v1"), false);
+    assert.equal(isGatedPath("/llms.txt", "/v1"), false);
+    assert.equal(isGatedPath("/.well-known/llms.txt", "/v1"), false);
     assert.equal(isGatedPath("/v1/quote", "/v1"), true);
     assert.equal(isGatedPath("/other", "/v1"), false);
     assert.equal(isGatedPath("/other", ""), true);

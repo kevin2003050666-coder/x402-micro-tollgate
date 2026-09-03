@@ -80,6 +80,17 @@ npm i && npm start
 # curl "http://127.0.0.1:8402/v1/fetch-md?url=https://example.com" → 402 (paid HTML→Markdown demo)
 ```
 
+**npx one-liners** (no clone):
+
+```bash
+npx x402-micro-tollgate@0.3.0
+npx x402-micro-tollgate@0.3.0 --seller 0xYourReceivingAddress --stdio
+```
+
+`--seller` / `-s` sets `X402_PAY_TO` before boot (env vars still work). Default without `--stdio` is HTTP + `/mcp` on port 8402.
+
+Agent / crawler docs: [`llms.txt`](./llms.txt) (also `GET /llms.txt` and `GET /.well-known/llms.txt` when the gateway is running) · OpenAPI 3.1: [`docs/openapi.yaml`](./docs/openapi.yaml)
+
 Alternative one-liner: `docker compose up --build`
 
 Without CDP keys the process runs in **demo mode** (protocol-shaped 402 / MCP PaymentRequired, no on-chain settle).
@@ -103,9 +114,13 @@ Stdio:
   "mcpServers": {
     "x402-micro-tollgate": {
       "command": "npx",
-      "args": ["x402-micro-tollgate", "--stdio"],
+      "args": [
+        "x402-micro-tollgate@0.3.0",
+        "--seller",
+        "0xYourReceivingAddress",
+        "--stdio"
+      ],
       "env": {
-        "X402_PAY_TO": "0xYourReceivingAddress",
         "CDP_API_KEY_ID": "...",
         "CDP_API_KEY_SECRET": "...",
         "PUBLIC_BASE_URL": "https://your.public.host"
@@ -114,6 +129,8 @@ Stdio:
   }
 }
 ```
+
+(`X402_PAY_TO` in `env` still works if you omit `--seller`.)
 
 ### Library drop-in (permissionless seller)
 
@@ -404,6 +421,7 @@ Agents / clients
    ├─ HTTP  /v1/*          → x402 402 JSON (agents) or Smart Wallet HTML paywall (browsers)
    ├─ GET   /v1/fetch-md   → paid HTML→Markdown demo (same x402 gate)
    ├─ GET   /x402/discover → free agent yellow pages (alias /discover; from merchants JSON)
+   ├─ GET   /llms.txt      → free AI-crawler summary (alias /.well-known/llms.txt)
    ├─ POST  /x402/session-token → free Onramp session token (when CDP server keys set)
    ├─ GET   /merchants     → free merchant registry (id, label, seller, payTo)
    ├─ GET   /health        → free (+ paywall config flags)
@@ -416,7 +434,9 @@ Agents / clients
 | HTTP | `createX402Server` + `paymentMiddlewareFromHTTPServer` + `@x402/paywall` (browser) |
 | MCP | `x402ResourceServer` + `createCdpFacilitatorClient` + `createPaymentWrapper` + Bazaar extension |
 
-CLI: `npx x402-micro-tollgate` | `--stdio` | `--port N`
+CLI: `npx x402-micro-tollgate@0.3.0` | `--seller 0x…` / `-s` | `--stdio` | `--port N`
+
+Agent SEO: [`llms.txt`](./llms.txt) · [`docs/openapi.yaml`](./docs/openapi.yaml)
 
 ---
 

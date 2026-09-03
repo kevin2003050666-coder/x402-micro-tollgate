@@ -10,7 +10,7 @@ import { createUpstreamHandler } from "./proxy.js";
 import { createFetchMdHandler } from "./fetch-md.js";
 import { mountMcpTransports } from "./mcp/http.js";
 import type { McpPaymentLayer } from "./mcp/payment.js";
-import { resolvePublicDir } from "./static.js";
+import { resolveLlmsTxtPath, resolvePublicDir } from "./static.js";
 import { listMerchantsPublic } from "./merchants.js";
 import {
   buildDiscoverDocument,
@@ -173,6 +173,16 @@ export async function createApp(options: AppOptions = {}): Promise<CreatedApp> {
   };
   app.get(DISCOVER_PATH, sendDiscover);
   app.get(DISCOVER_ALIAS_PATH, sendDiscover);
+
+  // Free AI-crawler llms.txt (repo root). Same body at /.well-known/llms.txt.
+  const llmsTxtPath = resolveLlmsTxtPath();
+  if (llmsTxtPath) {
+    const sendLlmsTxt = (_req: Request, res: Response) => {
+      res.status(200).type("text/plain; charset=utf-8").sendFile(llmsTxtPath);
+    };
+    app.get("/llms.txt", sendLlmsTxt);
+    app.get("/.well-known/llms.txt", sendLlmsTxt);
+  }
 
   // Coinbase Onramp session token (optional — 503 when CDP server keys missing).
   // Free path: must stay before payment middleware. Never exposes wallet secrets.

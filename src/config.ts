@@ -441,6 +441,8 @@ export const FREE_PATHS = new Set([
   "/x402/session-token",
   "/x402/discover",
   "/discover",
+  "/llms.txt",
+  "/.well-known/llms.txt",
 ]);
 
 export function isFreePath(path: string): boolean {
