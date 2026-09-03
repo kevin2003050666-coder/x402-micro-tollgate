@@ -89,7 +89,7 @@ npx x402-micro-tollgate@0.3.1 --seller 0xYourReceivingAddress --stdio
 
 `--seller` / `-s` sets `X402_PAY_TO` before boot (env vars still work). Default without `--stdio` is HTTP + `/mcp` on port 8402.
 
-Agent / crawler docs: [`llms.txt`](./llms.txt) (also `GET /llms.txt` and `GET /.well-known/llms.txt` when the gateway is running) · OpenAPI 3.1: [`docs/openapi.yaml`](./docs/openapi.yaml)
+Agent / crawler docs: [`llms.txt`](./llms.txt) (also `GET /llms.txt` and `GET /.well-known/llms.txt` when the gateway is running) · OpenAPI 3.1: [`docs/openapi.yaml`](./docs/openapi.yaml) (also `GET /openapi.yaml` and `GET /docs/openapi.yaml`)
 
 Alternative one-liner: `docker compose up --build`
 
@@ -422,6 +422,7 @@ Agents / clients
    ├─ GET   /v1/fetch-md   → paid HTML→Markdown demo (same x402 gate)
    ├─ GET   /x402/discover → free agent yellow pages (alias /discover; from merchants JSON)
    ├─ GET   /llms.txt      → free AI-crawler summary (alias /.well-known/llms.txt)
+   ├─ GET   /openapi.yaml  → free OpenAPI 3.1 (alias /docs/openapi.yaml)
    ├─ POST  /x402/session-token → free Onramp session token (when CDP server keys set)
    ├─ GET   /merchants     → free merchant registry (id, label, seller, payTo)
    ├─ GET   /health        → free (+ paywall config flags)

@@ -12,7 +12,8 @@ info:
       optional `x-merchant-id`
     - Response: `PAYMENT-REQUIRED` on unpaid 402; `PAYMENT-RESPONSE` after settle / demo accept
 
-    Free discovery: `/health`, `/x402/discover`, `/llms.txt`, `/merchants`.
+    Free discovery: `/health`, `/x402/discover`, `/llms.txt`, `/openapi.yaml`,
+    `/docs/openapi.yaml`, `/merchants`.
     Gated by default under `GATED_PREFIX` (default `/v1`).
   license:
     name: MIT
@@ -96,6 +97,32 @@ paths:
           description: Same body as /llms.txt
           content:
             text/plain:
+              schema:
+                type: string
+
+  /openapi.yaml:
+    get:
+      tags: [free]
+      summary: OpenAPI 3.1 specification
+      operationId: getOpenApiYaml
+      responses:
+        "200":
+          description: OpenAPI YAML document
+          content:
+            application/yaml:
+              schema:
+                type: string
+
+  /docs/openapi.yaml:
+    get:
+      tags: [free]
+      summary: Alias of /openapi.yaml
+      operationId: getDocsOpenApiYaml
+      responses:
+        "200":
+          description: Same body as /openapi.yaml
+          content:
+            application/yaml:
               schema:
                 type: string
 

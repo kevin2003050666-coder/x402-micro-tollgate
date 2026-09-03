@@ -10,7 +10,7 @@ import { createUpstreamHandler } from "./proxy.js";
 import { createFetchMdHandler } from "./fetch-md.js";
 import { mountMcpTransports } from "./mcp/http.js";
 import type { McpPaymentLayer } from "./mcp/payment.js";
-import { resolveLlmsTxtPath, resolvePublicDir } from "./static.js";
+import { resolveLlmsTxtPath, resolveOpenApiYamlPath, resolvePublicDir } from "./static.js";
 import { listMerchantsPublic } from "./merchants.js";
 import {
   buildDiscoverDocument,
@@ -182,6 +182,16 @@ export async function createApp(options: AppOptions = {}): Promise<CreatedApp> {
     };
     app.get("/llms.txt", sendLlmsTxt);
     app.get("/.well-known/llms.txt", sendLlmsTxt);
+  }
+
+  // Free OpenAPI 3.1 spec (docs/openapi.yaml). Aliases: /openapi.yaml and /docs/openapi.yaml.
+  const openApiYamlPath = resolveOpenApiYamlPath();
+  if (openApiYamlPath) {
+    const sendOpenApiYaml = (_req: Request, res: Response) => {
+      res.status(200).type("application/yaml").sendFile(openApiYamlPath);
+    };
+    app.get("/openapi.yaml", sendOpenApiYaml);
+    app.get("/docs/openapi.yaml", sendOpenApiYaml);
   }
 
   // Coinbase Onramp session token (optional — 503 when CDP server keys missing).
