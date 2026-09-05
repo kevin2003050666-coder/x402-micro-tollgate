@@ -12,7 +12,8 @@ info:
       optional `x-merchant-id`
     - Response: `PAYMENT-REQUIRED` on unpaid 402; `PAYMENT-RESPONSE` after settle / demo accept
 
-    Free discovery: `/health`, `/x402/discover`, `/llms.txt`, `/openapi.yaml`,
+    Free discovery: `/health`, `/x402/discover`, `/.well-known/x402.json`,
+    `/.well-known/agent-card.json`, `/llms.txt`, `/openapi.yaml`,
     `/docs/openapi.yaml`, `/merchants`.
     Gated by default under `GATED_PREFIX` (default `/v1`).
   license:
@@ -73,6 +74,62 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DiscoverDocument"
+
+  /.well-known/x402.json:
+    get:
+      tags: [free]
+      summary: Origin-hosted x402 / Bazaar discovery manifest
+      operationId: getWellKnownX402
+      responses:
+        "200":
+          description: Machine-readable paid resources + discover catalog (no payment)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /.well-known/x402:
+    get:
+      tags: [free]
+      summary: Alias of /.well-known/x402.json
+      operationId: getWellKnownX402Alias
+      responses:
+        "200":
+          description: Same payload as /.well-known/x402.json
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /.well-known/agent-card.json:
+    get:
+      tags: [free]
+      summary: Agent discovery card (MCP / OpenAPI / x402 links)
+      operationId: getWellKnownAgentCard
+      responses:
+        "200":
+          description: Agent card with discovery URLs (no PII)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /.well-known/agent.json:
+    get:
+      tags: [free]
+      summary: Alias of /.well-known/agent-card.json
+      operationId: getWellKnownAgentAlias
+      responses:
+        "200":
+          description: Same payload as /.well-known/agent-card.json
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
 
   /llms.txt:
     get:

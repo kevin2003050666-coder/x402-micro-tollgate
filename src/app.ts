@@ -17,6 +17,14 @@ import {
   DISCOVER_ALIAS_PATH,
   DISCOVER_PATH,
 } from "./discover.js";
+import {
+  buildAgentCardDocument,
+  buildX402WellKnownDocument,
+  WELL_KNOWN_AGENT_ALIAS_PATH,
+  WELL_KNOWN_AGENT_CARD_PATH,
+  WELL_KNOWN_X402_ALIAS_PATH,
+  WELL_KNOWN_X402_PATH,
+} from "./well-known.js";
 import { createSessionTokenHandler } from "./session-token.js";
 import { SESSION_TOKEN_PATH } from "./paywall.js";
 import {
@@ -173,6 +181,20 @@ export async function createApp(options: AppOptions = {}): Promise<CreatedApp> {
   };
   app.get(DISCOVER_PATH, sendDiscover);
   app.get(DISCOVER_ALIAS_PATH, sendDiscover);
+
+  // Origin-hosted x402/Bazaar manifest (free). Shares discover builder; lists real paid resources only.
+  const sendX402WellKnown = (_req: Request, res: Response) => {
+    res.status(200).json(buildX402WellKnownDocument(config));
+  };
+  app.get(WELL_KNOWN_X402_PATH, sendX402WellKnown);
+  app.get(WELL_KNOWN_X402_ALIAS_PATH, sendX402WellKnown);
+
+  // Agent discovery card (free). Links MCP / OpenAPI / llms / x402 — no PII.
+  const sendAgentCard = (_req: Request, res: Response) => {
+    res.status(200).type("application/json").json(buildAgentCardDocument(config));
+  };
+  app.get(WELL_KNOWN_AGENT_CARD_PATH, sendAgentCard);
+  app.get(WELL_KNOWN_AGENT_ALIAS_PATH, sendAgentCard);
 
   // Free AI-crawler llms.txt (repo root). Same body at /.well-known/llms.txt.
   const llmsTxtPath = resolveLlmsTxtPath();

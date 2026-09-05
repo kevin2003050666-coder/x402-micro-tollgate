@@ -4,6 +4,7 @@ import {
   assertSafePublicHttpUrlPinned,
   type SafePublicUrl,
 } from "./ssrf.js";
+import { PACKAGE_VERSION } from "./version.js";
 
 export {
   isBlockedIp,
@@ -115,7 +116,7 @@ async function readLimitedBody(response: globalThis.Response, maxBytes: number):
   return Buffer.concat(chunks.map((c) => Buffer.from(c))).toString("utf8");
 }
 
-export interface FetchMdHandlerOptions {
+export interface FetchMarkdownOptions {
   /**
    * Override URL safety checks (tests may allow loopback fixture servers).
    * May return `URL` or `SafePublicUrl`.
@@ -126,84 +127,129 @@ export interface FetchMdHandlerOptions {
   timeoutMs?: number;
 }
 
+export interface FetchMarkdownResult {
+  url: string;
+  markdown: string;
+  title?: string;
+}
+
+/**
+ * Shared HTML→Markdown fetch used by HTTP `/v1/fetch-md` and MCP `fetch_md`.
+ * Throws Error with `.code` for mapped failures (`missing_url`, `invalid_url`, …).
+ */
+export async function fetchMarkdownFromUrl(
+  rawUrl: string,
+  options: FetchMarkdownOptions = {},
+): Promise<FetchMarkdownResult> {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) {
+    throw Object.assign(new Error("Query parameter url is required"), { code: "missing_url" });
+  }
+
+  const assertUrl = options.assertSafeUrl ?? assertSafePublicHttpUrlPinned;
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const maxBytes = options.maxBytes ?? MAX_BYTES;
+  const timeoutMs = options.timeoutMs ?? FETCH_TIMEOUT_MS;
+
+  let target: URL;
+  try {
+    const safe = await assertUrl(trimmed);
+    target = safe instanceof URL ? safe : safe.url;
+  } catch (err) {
+    const code =
+      err && typeof err === "object" && "code" in err
+        ? String((err as { code: string }).code)
+        : "invalid_url";
+    const message = err instanceof Error ? err.message : "Invalid URL";
+    throw Object.assign(new Error(message), { code });
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    // Do not follow redirects — blocks private-hop Location rebinding.
+    const response = await fetchImpl(target, {
+      method: "GET",
+      redirect: "error",
+      signal: controller.signal,
+      headers: {
+        accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+        "user-agent": `x402-micro-tollgate-fetch-md/${PACKAGE_VERSION}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw Object.assign(new Error(`Upstream returned HTTP ${response.status}`), {
+        code: "fetch_failed",
+      });
+    }
+
+    const html = await readLimitedBody(response, maxBytes);
+    const { markdown, title } = htmlToMarkdown(html);
+    return {
+      url: target.toString(),
+      markdown,
+      ...(title ? { title } : {}),
+    };
+  } catch (err) {
+    if (err && typeof err === "object" && "code" in err) {
+      throw err;
+    }
+    const aborted =
+      (err instanceof Error && err.name === "AbortError") ||
+      (typeof err === "object" &&
+        err !== null &&
+        "name" in err &&
+        (err as { name: string }).name === "AbortError");
+    if (aborted) {
+      throw Object.assign(new Error(`Fetch timed out after ${timeoutMs}ms`), {
+        code: "timeout",
+      });
+    }
+    const message = err instanceof Error ? err.message : "Fetch failed";
+    throw Object.assign(new Error(message), { code: "fetch_failed" });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export type FetchMdHandlerOptions = FetchMarkdownOptions;
+
 /**
  * Paid demo: GET /v1/fetch-md?url=… — runs after x402 middleware settles.
  * Fetches a public page and returns Markdown (SSRF-hardened: scheme allowlist,
  * private IP deny, DNS re-check before fetch, no redirects).
  */
 export function createFetchMdHandler(options: FetchMdHandlerOptions = {}): RequestHandler {
-  const assertUrl = options.assertSafeUrl ?? assertSafePublicHttpUrlPinned;
-  const fetchImpl = options.fetchImpl ?? fetch;
   const maxBytes = options.maxBytes ?? MAX_BYTES;
   const timeoutMs = options.timeoutMs ?? FETCH_TIMEOUT_MS;
 
   return async (req: Request, res: Response) => {
-    const rawUrl = typeof req.query.url === "string" ? req.query.url.trim() : "";
-    if (!rawUrl) {
-      jsonError(res, 400, "missing_url", "Query parameter url is required");
-      return;
-    }
-
-    let target: URL;
+    const rawUrl = typeof req.query.url === "string" ? req.query.url : "";
     try {
-      const safe = await assertUrl(rawUrl);
-      target = safe instanceof URL ? safe : safe.url;
+      const result = await fetchMarkdownFromUrl(rawUrl, options);
+      res.status(200).json(result);
     } catch (err) {
       const code =
         err && typeof err === "object" && "code" in err
           ? String((err as { code: string }).code)
-          : "invalid_url";
-      const message = err instanceof Error ? err.message : "Invalid URL";
-      jsonError(res, 400, code, message);
-      return;
-    }
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-    try {
-      // Do not follow redirects — blocks private-hop Location rebinding.
-      const response = await fetchImpl(target, {
-        method: "GET",
-        redirect: "error",
-        signal: controller.signal,
-        headers: {
-          accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
-          "user-agent": "x402-micro-tollgate-fetch-md/0.2",
-        },
-      });
-
-      if (!response.ok) {
-        jsonError(res, 502, "fetch_failed", `Upstream returned HTTP ${response.status}`);
-        return;
-      }
-
-      const html = await readLimitedBody(response, maxBytes);
-      const { markdown, title } = htmlToMarkdown(html);
-      res.status(200).json({
-        url: target.toString(),
-        markdown,
-        ...(title ? { title } : {}),
-      });
-    } catch (err) {
-      if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "too_large") {
+          : "fetch_failed";
+      const message = err instanceof Error ? err.message : "Fetch failed";
+      if (code === "too_large") {
         jsonError(res, 413, "too_large", `Page exceeds ${maxBytes} byte limit`);
         return;
       }
-      const aborted =
-        (err instanceof Error && err.name === "AbortError") ||
-        (typeof err === "object" &&
-          err !== null &&
-          "name" in err &&
-          (err as { name: string }).name === "AbortError");
-      if (aborted) {
+      if (code === "timeout") {
         jsonError(res, 504, "timeout", `Fetch timed out after ${timeoutMs}ms`);
         return;
       }
-      const message = err instanceof Error ? err.message : "Fetch failed";
-      jsonError(res, 502, "fetch_failed", message);
-    } finally {
-      clearTimeout(timer);
+      if (code === "fetch_failed") {
+        jsonError(res, 502, "fetch_failed", message);
+        return;
+      }
+      // missing_url / invalid_* / ssrf_blocked / dns_failed / …
+      jsonError(res, 400, code, message);
     }
   };
 }

@@ -40,6 +40,8 @@ Live CDP settlement also needs `CDP_API_KEY_ID` and `CDP_API_KEY_SECRET`. Withou
 - Origin: https://x402-micro-tollgate.onrender.com
 - Health: `GET https://x402-micro-tollgate.onrender.com/health`
 - Discover (free yellow pages): `GET https://x402-micro-tollgate.onrender.com/x402/discover`
+- Well-known x402: `GET https://x402-micro-tollgate.onrender.com/.well-known/x402.json`
+- Agent card: `GET https://x402-micro-tollgate.onrender.com/.well-known/agent-card.json`
 - MCP: `POST https://x402-micro-tollgate.onrender.com/mcp`
 - Expect 402 (unpaid gated quote):
 
@@ -55,11 +57,13 @@ Expect HTTP 402, header `PAYMENT-REQUIRED`, and a small JSON body (`error`, `pri
 |---|---|---|
 | `GET /health` | free | Service status, network, payTo/seller flags |
 | `GET /x402/discover` | free | Agent-readable catalog (`GET /discover` alias) |
+| `GET /.well-known/x402.json` | free | Bazaar-friendly origin manifest (`/.well-known/x402` alias) |
+| `GET /.well-known/agent-card.json` | free | Agent card → MCP / OpenAPI / llms / x402 (`/.well-known/agent.json` alias) |
 | `GET /llms.txt` | free | This file (`GET /.well-known/llms.txt` alias) |
 | `GET /openapi.yaml` | free | OpenAPI 3.1 (`GET /docs/openapi.yaml` alias) |
 | `GET /merchants` | free | Merchant registry listing |
 | `GET /v1/*` (and other gated paths) | paid | 402 until `PAYMENT-SIGNATURE` |
-| `/mcp` | free handshake; tools may be paid | Streamable HTTP MCP |
+| `/mcp` | free handshake; tools may be paid | Streamable HTTP MCP (`get_quote`, `proxy_request`, `fetch_md`) |
 
 ## Package / source
 

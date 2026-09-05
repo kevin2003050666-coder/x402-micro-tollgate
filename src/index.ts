@@ -36,6 +36,17 @@ export {
   type DiscoverService,
   type DiscoverServiceStatus,
 } from "./discover.js";
+export {
+  buildX402WellKnownDocument,
+  buildAgentCardDocument,
+  WELL_KNOWN_X402_PATH,
+  WELL_KNOWN_X402_ALIAS_PATH,
+  WELL_KNOWN_AGENT_CARD_PATH,
+  WELL_KNOWN_AGENT_ALIAS_PATH,
+  type X402WellKnownDocument,
+  type AgentCardDocument,
+} from "./well-known.js";
+export { PACKAGE_VERSION } from "./version.js";
 export { FEE_SPLITTER_CREATION_BYTECODE } from "./fee-splitter-bytecode.js";
 export {
   SignatureDedupeCache,

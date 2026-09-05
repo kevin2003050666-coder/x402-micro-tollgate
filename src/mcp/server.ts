@@ -1,10 +1,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { TollgateConfig } from "../config.js";
+import { PACKAGE_VERSION } from "../version.js";
 import { createMcpPaymentLayer, type McpPaymentLayer } from "./payment.js";
 import {
+  createFetchMdToolHandler,
   createGetQuoteHandler,
   createProxyRequestHandler,
   createServerInfoHandler,
+  fetchMdSchema,
   proxyRequestSchema,
 } from "./tools.js";
 
@@ -24,7 +27,7 @@ export async function createTollgateMcpServer(
   const payment = paymentLayer ?? (await createMcpPaymentLayer(config));
   const server = new McpServer({
     name: "x402-micro-tollgate",
-    version: "0.2.0",
+    version: PACKAGE_VERSION,
   });
 
   // FREE
@@ -58,6 +61,18 @@ export async function createTollgateMcpServer(
     `Forward method/path/query/headers/body to UPSTREAM_URL (or mock). Requires payment of ${config.price} USDC.`,
     proxyRequestSchema,
     proxyRequest,
+  );
+
+  const fetchMd = payment.wrapPaid(
+    "fetch_md",
+    `Fetch a public http(s) URL and return Markdown (same as GET /v1/fetch-md). Requires payment of ${config.price}.`,
+    createFetchMdToolHandler(),
+  );
+  server.tool(
+    "fetch_md",
+    `Fetch a public http(s) URL and convert HTML to Markdown. Requires payment of ${config.price} USDC. Same capability as HTTP GET /v1/fetch-md.`,
+    fetchMdSchema,
+    fetchMd,
   );
 
   return { server, payment };

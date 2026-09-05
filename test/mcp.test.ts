@@ -123,24 +123,52 @@ describe("MCP payment tools", () => {
     assert.equal(required.extensions?.bazaar?.info?.input?.toolName, "get_quote");
   });
 
-  it("demo payment meta allows proxy_request", async () => {
+  it("unpaid fetch_md returns PaymentRequired with bazaar toolName", async () => {
+    const config = loadConfig({
+      X402_PAY_TO: "0x1234567890123456789012345678901234567890",
+      PUBLIC_BASE_URL: "https://tollgate.example.com",
+    });
+    const payment = await createMcpPaymentLayer(config);
+    const { createFetchMdToolHandler } = await import("../src/mcp/tools.js");
+    const wrapped = payment.wrapPaid(
+      "fetch_md",
+      "fetch markdown",
+      createFetchMdToolHandler(),
+    );
+    const result = await wrapped({ url: "https://example.com" }, { _meta: {} });
+    assert.equal(result.isError, true);
+    const required = result.structuredContent as {
+      extensions?: { bazaar?: { discoverable?: boolean; info?: { input?: { toolName?: string } } } };
+    };
+    assert.equal(required.extensions?.bazaar?.discoverable, true);
+    assert.equal(required.extensions?.bazaar?.info?.input?.toolName, "fetch_md");
+  });
+
+  it("demo payment meta allows fetch_md", async () => {
     const config = loadConfig({
       X402_PAY_TO: "0x1234567890123456789012345678901234567890",
     });
     const payment = await createMcpPaymentLayer(config);
-    const { createProxyRequestHandler } = await import("../src/mcp/tools.js");
+    const { createFetchMdToolHandler } = await import("../src/mcp/tools.js");
     const wrapped = payment.wrapPaid(
-      "proxy_request",
-      "proxy",
-      createProxyRequestHandler(config),
+      "fetch_md",
+      "fetch markdown",
+      createFetchMdToolHandler({
+        assertSafeUrl: async (raw) => new URL(raw),
+        fetchImpl: async () =>
+          new Response("<html><title>Hi</title><body><h1>Hello</h1></body></html>", {
+            status: 200,
+            headers: { "content-type": "text/html" },
+          }),
+      }),
     );
 
     const result = await wrapped(
-      { method: "GET", path: "/v1/status" },
+      { url: "https://example.com" },
       {
         _meta: {
           [MCP_PAYMENT_META_KEY]: buildDemoPaymentPayload(
-            "proxy_request",
+            "fetch_md",
             payment.accepts,
             payment.publicMcpUrl,
           ),
@@ -150,8 +178,18 @@ describe("MCP payment tools", () => {
 
     assert.equal(result.isError, undefined);
     const body = JSON.parse(result.content[0].text);
-    assert.equal(body.status, 200);
-    assert.equal(body.path, "/v1/status");
-    assert.equal(body.body.message, "Mock upstream OK");
+    assert.equal(body.url, "https://example.com/");
+    assert.match(body.markdown, /Hello/);
+    assert.equal(body.title, "Hi");
+  });
+
+  it("MCP server version matches package.json", async () => {
+    const { PACKAGE_VERSION } = await import("../src/version.js");
+    const src = await import("node:fs").then((fs) =>
+      fs.readFileSync(new URL("../src/mcp/server.ts", import.meta.url), "utf8"),
+    );
+    assert.match(src, /PACKAGE_VERSION/);
+    assert.equal(PACKAGE_VERSION, "0.3.3");
+    assert.equal(/version:\s*"0\.2\.0"/.test(src), false);
   });
 });

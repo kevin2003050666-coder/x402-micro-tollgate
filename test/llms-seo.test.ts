@@ -28,14 +28,19 @@ describe("llms.txt + OpenAPI SEO surfaces", () => {
     assert.match(spec, /openapi:\s*3\.1\.0/);
     assert.match(spec, /PAYMENT-SIGNATURE/);
     assert.match(spec, /\/x402\/discover/);
+    assert.match(spec, /\/\.well-known\/x402\.json/);
+    assert.match(spec, /\/\.well-known\/agent-card\.json/);
     assert.match(spec, /\/health/);
     assert.match(spec, /\/mcp/);
     assert.match(spec, /\/openapi\.yaml/);
+    assert.match(spec, /version:\s*0\.3\.3/);
   });
 
   it("treats /llms.txt and OpenAPI paths as free", () => {
     assert.equal(isFreePath("/llms.txt"), true);
     assert.equal(isFreePath("/.well-known/llms.txt"), true);
+    assert.equal(isFreePath("/.well-known/x402.json"), true);
+    assert.equal(isFreePath("/.well-known/agent-card.json"), true);
     assert.equal(isFreePath("/openapi.yaml"), true);
     assert.equal(isFreePath("/docs/openapi.yaml"), true);
     assert.equal(isGatedPath("/llms.txt", "/v1"), false);

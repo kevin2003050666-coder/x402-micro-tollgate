@@ -203,3 +203,42 @@ export function mcpProxyRequestBazaarExtension() {
     }),
   );
 }
+
+export function mcpFetchMdBazaarExtension() {
+  return withDiscoverable(
+    declareDiscoveryExtension({
+      toolName: "fetch_md",
+      description:
+        "Fetch a public http(s) URL and return Markdown (same capability as GET /v1/fetch-md). Requires x402 USDC payment.",
+      transport: "streamable-http",
+      inputSchema: {
+        type: "object",
+        properties: {
+          url: {
+            type: "string",
+            description: "Public http(s) URL to fetch and convert to Markdown",
+          },
+        },
+        required: ["url"],
+        additionalProperties: false,
+      },
+      example: { url: "https://example.com" },
+      output: {
+        example: {
+          url: "https://example.com",
+          title: "Example Domain",
+          markdown: "# Example Domain\n\nThis domain is for use in illustrative examples.",
+        },
+        schema: {
+          type: "object",
+          properties: {
+            url: { type: "string" },
+            title: { type: "string" },
+            markdown: { type: "string" },
+          },
+          required: ["url", "markdown"],
+        },
+      },
+    }),
+  );
+}
