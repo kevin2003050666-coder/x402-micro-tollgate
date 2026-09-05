@@ -14,6 +14,7 @@ import {
 } from "@x402/mcp";
 import type { TollgateConfig } from "../config.js";
 import {
+  mcpFetchMdBazaarExtension,
   mcpGetQuoteBazaarExtension,
   mcpProxyRequestBazaarExtension,
 } from "../bazaar.js";
@@ -113,6 +114,7 @@ async function buildResourceServer(config: TollgateConfig): Promise<{
 function bazaarForTool(toolName: string): Record<string, unknown> {
   if (toolName === "get_quote") return mcpGetQuoteBazaarExtension();
   if (toolName === "proxy_request") return mcpProxyRequestBazaarExtension();
+  if (toolName === "fetch_md") return mcpFetchMdBazaarExtension();
   return mcpGetQuoteBazaarExtension();
 }
 

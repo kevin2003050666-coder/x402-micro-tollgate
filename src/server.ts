@@ -30,6 +30,8 @@ async function main(): Promise<void> {
           : { enabled: false },
         health: `http://127.0.0.1:${config.port}/health`,
         discover: `http://127.0.0.1:${config.port}/x402/discover`,
+        x402WellKnown: `http://127.0.0.1:${config.port}/.well-known/x402.json`,
+        agentCard: `http://127.0.0.1:${config.port}/.well-known/agent-card.json`,
         mcp: `http://127.0.0.1:${config.port}/mcp`,
         sse: `http://127.0.0.1:${config.port}/sse`,
       }),

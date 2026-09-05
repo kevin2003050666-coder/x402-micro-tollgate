@@ -90,7 +90,7 @@ npx x402-micro-tollgate@0.3.3 --seller 0xYourReceivingAddress --stdio
 
 `--seller` / `-s` sets `X402_PAY_TO` before boot (env vars still work). Default without `--stdio` is HTTP + `/mcp` on port 8402.
 
-Agent / crawler docs: [`llms.txt`](./llms.txt) (also `GET /llms.txt` and `GET /.well-known/llms.txt` when the gateway is running) · OpenAPI 3.1: [`docs/openapi.yaml`](./docs/openapi.yaml) (also `GET /openapi.yaml` and `GET /docs/openapi.yaml`)
+Agent / crawler docs: [`llms.txt`](./llms.txt) (also `GET /llms.txt` and `GET /.well-known/llms.txt`) · OpenAPI 3.1: [`docs/openapi.yaml`](./docs/openapi.yaml) · well-known: `GET /.well-known/x402.json`, `GET /.well-known/agent-card.json`
 
 Alternative one-liner: `docker compose up --build`
 
@@ -191,7 +191,7 @@ The script imports the **local** client (`../src/client`) so repo CI does not ne
 
 Uses [`render.yaml`](./render.yaml): Node 22, `npm start`, health `/health`, env names from [`.env.example`](./.env.example). Set `CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`, and `X402_PAY_TO` in the dashboard for live settlement; set `PUBLIC_BASE_URL` to your `https://….onrender.com` origin for Bazaar.
 
-Ops bump: **redeploy discover** (force Render GitHub auto-deploy so production picks up `GET /x402/discover`). If auto-deploy does not fire within a few minutes after this lands on `main`, use the Render dashboard → Manual Deploy → Deploy latest commit.
+Ops bump: **redeploy discover + well-known** (force Render GitHub auto-deploy so production picks up `GET /x402/discover`, `GET /.well-known/x402.json`, `GET /.well-known/agent-card.json`, and MCP `fetch_md`). If auto-deploy does not fire within a few minutes after this lands on `main`, use the Render dashboard → Manual Deploy → Deploy latest commit.
 
 **Self-host production:** Docker — `docker compose up --build` (see [`Dockerfile`](./Dockerfile) / [`docker-compose.yml`](./docker-compose.yml)).
 
@@ -397,7 +397,8 @@ Scaffold in [`src/keeper.ts`](./src/keeper.ts). **Off by default** (`KEEPER_ENAB
 [Bazaar](https://github.com/coinbase/x402/blob/main/docs/extensions/bazaar.mdx) is the x402 discovery catalog.
 
 - **HTTP**: `createX402Server` auto-injects bazaar; we override with `discoverable: true`, descriptions, and input/output schemas (`GET /v1/quote` + gated prefix proxies).
-- **MCP**: `x402ResourceServer` does **not** auto-declare Bazaar — we register `bazaarResourceServerExtension` and pass `declareDiscoveryExtension({ toolName, inputSchema, … })` on `get_quote` / `proxy_request`. Resource URL is `PUBLIC_BASE_URL/mcp` (a real http(s) URL, not a display name).
+- **MCP**: `x402ResourceServer` does **not** auto-declare Bazaar — we register `bazaarResourceServerExtension` and pass `declareDiscoveryExtension({ toolName, inputSchema, … })` on `get_quote` / `proxy_request` / `fetch_md`. Resource URL is `PUBLIC_BASE_URL/mcp` (a real http(s) URL, not a display name).
+- **Origin well-known**: `GET /.well-known/x402.json` (alias `/.well-known/x402`) mirrors discover + lists live paid HTTP/MCP resources for facilitator-independent crawlers.
 
 **To appear in Bazaar:**
 
@@ -460,13 +461,15 @@ Agents / clients
    ├─ HTTP  /v1/*          → x402 402 JSON (agents) or Smart Wallet HTML paywall (browsers)
    ├─ GET   /v1/fetch-md   → paid HTML→Markdown demo (same x402 gate)
    ├─ GET   /x402/discover → free agent yellow pages (alias /discover; from merchants JSON)
+   ├─ GET   /.well-known/x402.json → free Bazaar-friendly origin manifest (alias /.well-known/x402)
+   ├─ GET   /.well-known/agent-card.json → free agent card (alias /.well-known/agent.json)
    ├─ GET   /llms.txt      → free AI-crawler summary (alias /.well-known/llms.txt)
    ├─ GET   /openapi.yaml  → free OpenAPI 3.1 (alias /docs/openapi.yaml)
    ├─ POST  /x402/session-token → free Onramp session token (when CDP server keys set)
    ├─ GET   /merchants     → free merchant registry (id, label, seller, payTo)
    ├─ GET   /health        → free (+ paywall config flags)
    ├─ GET   /              → developer landing (EN / 中文)
-   └─ MCP   /mcp           → server_info (free), get_quote + proxy_request (paid + bazaar)
+   └─ MCP   /mcp           → server_info (free), get_quote + proxy_request + fetch_md (paid + bazaar)
 ```
 
 | Surface | Stack |

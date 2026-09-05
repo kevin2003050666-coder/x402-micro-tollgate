@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { TollgateConfig } from "../config.js";
+import { fetchMarkdownFromUrl, type FetchMarkdownOptions } from "../fetch-md.js";
 import { forwardUpstreamRequest } from "../upstream.js";
 import type { McpPaymentLayer } from "./payment.js";
 
@@ -23,6 +24,16 @@ export type ProxyRequestArgs = {
   query?: Record<string, string | number | boolean | null>;
   headers?: Record<string, string>;
   body?: unknown;
+};
+
+export const fetchMdSchema = {
+  url: z
+    .string()
+    .describe("Public http(s) URL to fetch and convert to Markdown (same as GET /v1/fetch-md)"),
+};
+
+export type FetchMdArgs = {
+  url: string;
 };
 
 function textResult(data: unknown, isError = false) {
@@ -90,5 +101,22 @@ export function createProxyRequestHandler(config: TollgateConfig) {
       },
       result.status >= 400,
     );
+  };
+}
+
+/** Paid MCP twin of HTTP GET /v1/fetch-md — reuses SSRF-hardened fetchMarkdownFromUrl. */
+export function createFetchMdToolHandler(options: FetchMarkdownOptions = {}) {
+  return async (args: FetchMdArgs) => {
+    try {
+      const result = await fetchMarkdownFromUrl(args.url, options);
+      return textResult(result);
+    } catch (err) {
+      const code =
+        err && typeof err === "object" && "code" in err
+          ? String((err as { code: string }).code)
+          : "fetch_failed";
+      const message = err instanceof Error ? err.message : "Fetch failed";
+      return textResult({ error: code, message }, true);
+    }
   };
 }

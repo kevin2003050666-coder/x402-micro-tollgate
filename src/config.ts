@@ -443,6 +443,10 @@ export const FREE_PATHS = new Set([
   "/discover",
   "/llms.txt",
   "/.well-known/llms.txt",
+  "/.well-known/x402.json",
+  "/.well-known/x402",
+  "/.well-known/agent-card.json",
+  "/.well-known/agent.json",
   "/openapi.yaml",
   "/docs/openapi.yaml",
 ]);
